@@ -1,0 +1,10 @@
+/Map_CellsV2.yaml
+/Map_Cells_Output.xlsx
+
+# IDE files
+*.iml
+.idea/
+
+#Yaml files and Excel files (For data security)
+*.yaml
+*.xlsx
