@@ -32,6 +32,7 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
     2. Date
     3. Timestamp (extracted from data field)
     4. Item (extracted from data field)
+    5. Quantity (extracted from message field)
     """
     
     # Read and clean the XML content
@@ -69,9 +70,10 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
         username = html.unescape(username)
         date = date_elem.text if date_elem is not None else ''
         
-        # Extract timestamp and item type from data field
+        # Extract timestamp, item type, and quantity from data field
         timestamp = ''
         item_type = ''
+        quantity = ''
         if data_elem is not None and data_elem.text:
             try:
                 # Parse the JSON data
@@ -84,6 +86,13 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
                     type_field = json_data[0].get('type', '')
                     if type_field.startswith('item:'):
                         item_type = type_field[6:]  # Remove 'item:' prefix
+                    
+                    # Extract quantity from the message field
+                    message = json_data[0].get('message', '')
+                    # Look for pattern like "-3 from" in the message
+                    quantity_match = re.search(r'-(\d+)\s+from', message)
+                    if quantity_match:
+                        quantity = quantity_match.group(1)
             except (json.JSONDecodeError, KeyError, IndexError):
                 # Fallback: try to extract using regex if JSON parsing fails
                 time_match = re.search(r'"time":"([^"]+)"', data_elem.text)
@@ -93,9 +102,14 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
                 type_match = re.search(r'"type":"item:([^"]+)"', data_elem.text)
                 if type_match:
                     item_type = type_match.group(1)
+                    
+                # Extract quantity from message using regex
+                quantity_match = re.search(r'"message":"[^"]*?-(\d+)\s+from', data_elem.text)
+                if quantity_match:
+                    quantity = quantity_match.group(1)
         
         # Add row to data list
-        data_rows.append([username, date, timestamp, item_type])
+        data_rows.append([username, date, timestamp, item_type, quantity])
     
     # Sort data rows by username (ascending)
     data_rows.sort(key=lambda x: x[0].lower())
@@ -105,7 +119,7 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
         writer = csv.writer(csvfile)
         
         # Write header
-        writer.writerow(['Username', 'Date', 'Timestamp', 'Item'])
+        writer.writerow(['Username', 'Date', 'Timestamp', 'Item', 'Quantity'])
         
         # Write data rows
         writer.writerows(data_rows)
@@ -114,9 +128,9 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
     
     # Display first few rows as preview
     print("\nPreview of converted data:")
-    print("Username,Date,Timestamp,Item")
+    print("Username,Date,Timestamp,Item,Quantity")
     for i, row in enumerate(data_rows[:5]):
-        print(f"{row[0]},{row[1]},{row[2]},{row[3]}")
+        print(f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]}")
     
     return data_rows
 
