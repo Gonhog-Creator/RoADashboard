@@ -4,6 +4,8 @@ import csv
 import json
 import re
 import html
+import os
+import glob
 
 def clean_xml_content(xml_content):
     """
@@ -25,13 +27,11 @@ def clean_xml_content(xml_content):
 
 def parse_xml_to_csv(xml_file_path, csv_output_path):
     """
-    Convert XML file to CSV with specified columns:
-    1. UUID
-    2. Item ID
-    3. Username
-    4. Date
-    5. Timestamp (extracted from data field)
-    6. Item (extracted from data field)
+    XML Log Parser - Convert XML file to CSV with specified columns:
+    1. Username
+    2. Date
+    3. Timestamp (extracted from data field)
+    4. Item (extracted from data field)
     """
     
     # Read and clean the XML content
@@ -59,15 +59,11 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
     # Iterate through each row element
     for row in root.findall('row'):
         # Extract basic fields
-        uuid_elem = row.find('uuid')
-        item_id_elem = row.find('item_id')
         username_elem = row.find('username')
         date_elem = row.find('date')
         data_elem = row.find('data')
         
         # Get text content, handle missing elements
-        uuid = uuid_elem.text if uuid_elem is not None else ''
-        item_id = item_id_elem.text if item_id_elem is not None else ''
         username = username_elem.text if username_elem is not None else ''
         # Unescape HTML entities back to original characters
         username = html.unescape(username)
@@ -99,14 +95,17 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
                     item_type = type_match.group(1)
         
         # Add row to data list
-        data_rows.append([uuid, item_id, username, date, timestamp, item_type])
+        data_rows.append([username, date, timestamp, item_type])
+    
+    # Sort data rows by username (ascending)
+    data_rows.sort(key=lambda x: x[0].lower())
     
     # Write to CSV file
     with open(csv_output_path, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
         
         # Write header
-        writer.writerow(['UUID', 'Item ID', 'Username', 'Date', 'Timestamp', 'Item'])
+        writer.writerow(['Username', 'Date', 'Timestamp', 'Item'])
         
         # Write data rows
         writer.writerows(data_rows)
@@ -115,35 +114,52 @@ def parse_xml_to_csv(xml_file_path, csv_output_path):
     
     # Display first few rows as preview
     print("\nPreview of converted data:")
-    print("UUID,Item ID,Username,Date,Timestamp,Item")
+    print("Username,Date,Timestamp,Item")
     for i, row in enumerate(data_rows[:5]):
-        print(f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]}")
+        print(f"{row[0]},{row[1]},{row[2]},{row[3]}")
     
     return data_rows
 
 if __name__ == "__main__":
-    # File paths
-    xml_file = "/LogParser to Excel/complete_updated_item_log_testronius_march.xml.xml"
-    csv_file = "/LogParser to Excel/item_log_testronius_march.csv"
+    # Find XML files in current directory
+    xml_files = glob.glob("*.xml") + glob.glob("*.xml.xml")
     
-    # Convert XML to CSV
-    try:
-        data_rows = parse_xml_to_csv(xml_file, csv_file)
-        print(f"\nConversion completed successfully!")
-        print(f"Total records processed: {len(data_rows)}")
+    if not xml_files:
+        print("No XML files found in current directory!")
+        print("Please place XML files in the same directory as this script.")
+        exit(1)
+    
+    print(f"Found {len(xml_files)} XML file(s):")
+    for i, file in enumerate(xml_files, 1):
+        print(f"{i}. {file}")
+    
+    # Process each XML file
+    for xml_file in xml_files:
+        print(f"\nProcessing: {xml_file}")
         
-        # Get unique items and users
-        unique_items = set(row[4] for row in data_rows if row[4])
-        unique_users = set(row[2] for row in data_rows if row[2])
+        # Generate CSV filename
+        base_name = os.path.splitext(xml_file)[0]
+        csv_file = f"{base_name}.csv"
         
-        print(f"Unique items found: {len(unique_items)}")
-        print(f"Items: {sorted(unique_items)}")
-        print(f"Unique users: {len(unique_users)}")
-        
-        print(f"\nCSV file created: {csv_file}")
-        print("You can now open this CSV file in Excel or any spreadsheet application.")
-        
-    except Exception as e:
-        print(f"Error during conversion: {e}")
-        import traceback
-        traceback.print_exc()
+        try:
+            # Convert XML to CSV
+            data_rows = parse_xml_to_csv(xml_file, csv_file)
+            print(f"Conversion completed successfully!")
+            print(f"Total records processed: {len(data_rows)}")
+            
+            # Get unique items and users
+            unique_items = set(row[3] for row in data_rows if row[3])
+            unique_users = set(row[0] for row in data_rows if row[0])
+            
+            print(f"Unique items found: {len(unique_items)}")
+            print(f"Items: {sorted(unique_items)}")
+            print(f"Unique users: {len(unique_users)}")
+            
+            print(f"CSV file created: {csv_file}")
+            
+        except Exception as e:
+            print(f"Error processing {xml_file}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    print(f"\nAll files processed! You can now open the CSV files in Excel or any spreadsheet application.")
