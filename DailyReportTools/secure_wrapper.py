@@ -279,6 +279,9 @@ def main():
     # Handle authentication and data loading
     show_logout_button()
     
+    # Close sidebar by default
+    st.sidebar.markdown('<style>div[data-testid="stSidebar"] > div:first-child {display: none;}</style>', unsafe_allow_html=True)
+    
     # Load data with smart fallback
     load_csv_files()
     
