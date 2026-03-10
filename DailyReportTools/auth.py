@@ -11,8 +11,15 @@ try:
     # For Streamlit Community Cloud
     SECRET_KEY = st.secrets["secret_key"]
     ADMIN_USERS = dict(st.secrets["admin_users"])
-except:
+    
+    # Debug: Show what we loaded (remove this after fixing)
+    if st.experimental_get_query_params().get('debug') == ['true']:
+        st.sidebar.write("✅ Secrets loaded successfully")
+        st.sidebar.write(f"Users: {list(ADMIN_USERS.keys())}")
+        
+except Exception as e:
     # Fallback for local development
+    st.sidebar.error(f"Error loading secrets: {e}")
     SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here-change-in-production")
     
     # Load users from environment variable or use defaults
@@ -32,6 +39,8 @@ except:
         }
     
     ADMIN_USERS = load_users()
+    if st.experimental_get_query_params().get('debug') == ['true']:
+        st.sidebar.write("Using fallback configuration")
 
 def generate_token(username):
     """Generate JWT token for authenticated user"""
@@ -75,13 +84,30 @@ def login_page():
     """Display login page"""
     st.title("🔐 Realm Analytics - Login")
     
+    # Debug info
+    debug_mode = st.experimental_get_query_params().get('debug') == ['true']
+    if debug_mode:
+        with st.expander("🔍 Debug Info"):
+            st.write(f"Available users: {list(ADMIN_USERS.keys())}")
+            if 'admin' in ADMIN_USERS:
+                st.write(f"Admin hash: {ADMIN_USERS['admin']}")
+    
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
         submit_button = st.form_submit_button("Login")
         
         if submit_button:
+            if debug_mode:
+                st.write(f"Attempting login for: {username}")
+            
             hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            
+            if debug_mode:
+                st.write(f"Password hash: {hashed_password}")
+                if username in ADMIN_USERS:
+                    st.write(f"Expected hash: {ADMIN_USERS[username]}")
+                    st.write(f"Hashes match: {hashed_password == ADMIN_USERS[username]}")
             
             if username in ADMIN_USERS and ADMIN_USERS[username] == hashed_password:
                 # Generate and store token
