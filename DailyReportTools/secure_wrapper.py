@@ -234,7 +234,6 @@ def load_csv_files():
     
     if csv_files:
         st.sidebar.success("💾 Using local CSV files")
-        # Let the original dashboard handle local loading
         return None
     
     # Fallback to remote if local is empty
@@ -244,10 +243,30 @@ def load_csv_files():
         
         if remote_df is not None and not remote_df.empty:
             st.sidebar.success("✅ Using remote CSV files")
-            # Save remote data to a temporary location for the original dashboard to read
-            os.makedirs("Daily Reports", exist_ok=True)
-            remote_df.to_csv("Daily Reports/remote_data.csv", index=False)
-            return remote_df
+            
+            # Save individual CSV files so the original dashboard can read them
+            try:
+                os.makedirs("Daily Reports", exist_ok=True)
+                
+                # Group by source_file and save each separately
+                if 'source_file' in remote_df.columns:
+                    for filename in remote_df['source_file'].unique():
+                        file_df = remote_df[remote_df['source_file'] == filename].drop('source_file', axis=1)
+                        file_path = f"Daily Reports/{filename}"
+                        file_df.to_csv(file_path, index=False)
+                        st.sidebar.success(f"💾 Saved {filename}")
+                else:
+                    # If no source_file column, save as a single file with expected naming
+                    filename = f"realm_analytics_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.csv"
+                    file_path = f"Daily Reports/{filename}"
+                    remote_df.to_csv(file_path, index=False)
+                    st.sidebar.success(f"💾 Saved {filename}")
+                
+                return None  # Let the original dashboard handle the loading
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ Error saving remote files: {e}")
+                return remote_df
         else:
             st.sidebar.error("❌ Remote files also empty")
     
