@@ -10,11 +10,15 @@ from functools import wraps
 
 st.title("🔐 Debug - Loading Configuration")
 
-# Debug: Show all available secrets
+# Debug: Show all available secrets in detail
 st.write("🔍 Debug: Checking secrets...")
 try:
     all_secrets = dict(st.secrets)
     st.write("Available secrets:", list(all_secrets.keys()))
+    
+    # Show the raw secrets structure
+    st.write("Raw secrets structure:")
+    st.json(all_secrets)
     
     if "secret_key" in st.secrets:
         st.write("✅ secret_key found")
@@ -30,14 +34,35 @@ try:
         st.error("❌ admin_users NOT found")
         st.stop()
     
-    # Optional GitHub secrets
-    GITHUB_TOKEN = st.secrets.get("github_token", "")
-    CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
+    # Check for GitHub secrets at root level
+    GITHUB_TOKEN = None
+    CSV_REPO_URL = None
     
-    st.write(f"GitHub token: {'✅ Found' if GITHUB_TOKEN else '❌ Not found'}")
-    st.write(f"CSV repo URL: {'✅ Found' if CSV_REPO_URL else '❌ Not found'}")
+    if "github_token" in all_secrets:
+        GITHUB_TOKEN = st.secrets["github_token"]
+        st.write("✅ github_token found at root level")
+    elif "github_token" in ADMIN_USERS:
+        st.write("⚠️ github_token found in admin_users (wrong location)")
+        GITHUB_TOKEN = ADMIN_USERS["github_token"]
+    else:
+        st.write("❌ github_token NOT found anywhere")
     
-    st.success("✅ All secrets loaded successfully!")
+    if "csv_repo_url" in all_secrets:
+        CSV_REPO_URL = st.secrets["csv_repo_url"]
+        st.write("✅ csv_repo_url found at root level")
+    elif "csv_repo_url" in ADMIN_USERS:
+        st.write("⚠️ csv_repo_url found in admin_users (wrong location)")
+        CSV_REPO_URL = ADMIN_USERS["csv_repo_url"]
+    else:
+        st.write("❌ csv_repo_url NOT found anywhere")
+    
+    st.write(f"Final GitHub token: {'✅ Found' if GITHUB_TOKEN else '❌ Not found'}")
+    st.write(f"Final CSV repo URL: {'✅ Found' if CSV_REPO_URL else '❌ Not found'}")
+    
+    if GITHUB_TOKEN and CSV_REPO_URL:
+        st.success("✅ All secrets loaded successfully!")
+    else:
+        st.warning("⚠️ Some secrets missing")
     
 except Exception as e:
     st.error(f"❌ Error loading secrets: {e}")
@@ -142,10 +167,17 @@ def main():
     st.title("🏰 Realm Analytics Dashboard - Debug Mode")
     st.success("✅ Authentication working!")
     
+    # Show the final values that will be used
     if GITHUB_TOKEN and CSV_REPO_URL:
         st.info("📡 Remote CSV configured")
+        st.write(f"Repository: {CSV_REPO_URL}")
+        st.write(f"Token starts with: {GITHUB_TOKEN[:10]}...")
     else:
         st.warning("⚠️ Remote CSV not configured")
+        if not GITHUB_TOKEN:
+            st.error("❌ GitHub token missing")
+        if not CSV_REPO_URL:
+            st.error("❌ CSV repository URL missing")
 
 if __name__ == "__main__":
     main()
