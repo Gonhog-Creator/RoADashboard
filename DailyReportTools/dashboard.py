@@ -16,6 +16,7 @@ def calculate_daily_rate(values, dates):
         return [0] * len(values)
     
     daily_rates = []
+    
     for i in range(len(values)):
         if i == 0:
             daily_rates.append(0)  # First report has no rate
@@ -28,7 +29,7 @@ def calculate_daily_rate(values, dates):
             # Calculate time difference in days
             time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
             
-            if time_diff > 0:
+            if time_diff > 0.1:  # Only calculate rate if time difference is significant
                 # Calculate daily rate (change per day)
                 change = current_value - previous_value
                 daily_rate = change / time_diff
@@ -44,6 +45,10 @@ st.set_page_config(page_title="Realm Analytics Dashboard", layout="wide")
 def load_csv_files():
     """Load and parse all CSV files from Daily Reports folder"""
     csv_files = glob.glob("Daily Reports/*.csv")
+    
+    # Sort files by modification time (newest first)
+    csv_files = sorted(csv_files, key=os.path.getmtime, reverse=True)
+    
     all_data = []
     
     for file_path in csv_files:

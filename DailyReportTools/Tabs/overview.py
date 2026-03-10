@@ -22,7 +22,7 @@ def calculate_daily_rate(sorted_df, value_column):
             # Calculate time difference in days
             time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
             
-            if time_diff > 0:
+            if time_diff > 0.1:  # Only calculate rate if time difference is significant
                 # Calculate daily rate (change per day)
                 change = current_value - previous_value
                 daily_rate = change / time_diff
@@ -31,6 +31,36 @@ def calculate_daily_rate(sorted_df, value_column):
                 daily_rates.append(0)
     
     return pd.Series(daily_rates)
+
+def format_number(num, show_full=False):
+    """Format numbers with optional full display - keeps original styling"""
+    if show_full:
+        # Full numbers with original st.metric styling
+        return f"{int(num):,}"
+    else:
+        # Abbreviated numbers
+        if num >= 1_000_000_000:
+            return f"{num/1_000_000_000:.1f}B"
+        elif num >= 1_000_000:
+            return f"{num/1_000_000:.1f}M"
+        elif num >= 1_000:
+            return f"{num/1_000:.1f}K"
+        else:
+            return f"{int(num)}"
+
+def format_rate(rate, show_full=False):
+    """Format daily growth rates with optional full display - keeps original styling"""
+    if show_full:
+        # Full rates with original st.metric styling
+        return f"{int(rate):+,}/day"
+    else:
+        # Abbreviated rates
+        if abs(rate) >= 1_000_000:
+            return f"{rate/1_000_000:.1f}M/day"
+        elif abs(rate) >= 1_000:
+            return f"{rate/1_000:.1f}K/day"
+        else:
+            return f"{int(rate):,}/day"
 
 def create_overview_tab(filtered_df):
     """Create the Overview tab with resource and player stats"""
@@ -51,7 +81,15 @@ def create_overview_tab(filtered_df):
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("### 📈 Resource Overview")
+                # Add title and toggle on the same line
+                title_col1, title_col2 = st.columns([2, 1])
+                with title_col1:
+                    st.markdown("### 📈 Resource Overview")
+                with title_col2:
+                    # Use Streamlit's built-in toggle
+                    show_full_numbers = st.toggle("Full Numbers", value=st.session_state.get('resource_full_numbers', False), 
+                                                key="resource_full_numbers",
+                                                help="Show complete numbers instead of abbreviations")
                 
                 # Calculate daily increases using true daily rates
                 sorted_filtered = filtered_df.sort_values('date')
@@ -99,21 +137,21 @@ def create_overview_tab(filtered_df):
                                 if isinstance(latest_resources, dict):
                                     latest_amount = latest_resources.get(resource, 0)
                                     
-                                    # Get the calculated daily rate (per day)
+                                    # Get calculated daily rate (per day)
                                     daily_rate = sorted_filtered.iloc[-1][f'{resource}_daily_rate']
                                     
                                     # Calculate per player amount
                                     latest_players = sorted_filtered.iloc[-1]['total_players']
                                     avg_per_player = latest_amount / latest_players if latest_players > 0 else 0
                                     
-                                    # Use st.metric for main value, then add per player below
+                                    # Use st.metric for consistent styling in both modes
                                     st.metric(
                                         resource.title(),
-                                        f"{int(latest_amount):,}",
-                                        f"{int(daily_rate):+,}/day"
+                                        format_number(latest_amount, show_full_numbers),
+                                        format_rate(daily_rate, show_full_numbers)
                                     )
-                                    # Add per player amount below the metric in a grey bubble
-                                    st.markdown(f"<div style='text-align: left; margin-top: -10px;'><span style='background-color: #666; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{int(avg_per_player):,}/player</span></div>", unsafe_allow_html=True)
+                                    # Add per player amount below metric in a grey bubble
+                                    st.markdown(f"<div style='text-align: left; margin-top: -10px;'><span style='background-color: #666; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{format_number(avg_per_player, show_full_numbers)}/player</span></div>", unsafe_allow_html=True)
             
             with col2:
                 st.markdown("### 👥 Player Stats")
@@ -144,7 +182,9 @@ def create_overview_tab(filtered_df):
                                 daily_rate = (current_value - previous_value) / time_diff
                                 daily_rates.append(daily_rate)
                             else:
-                                daily_rates.append(0)
+                                # Same day reports - handle as daily change
+                                change = current_value - previous_value
+                                daily_rates.append(change)  # Use the actual change as daily rate
                     
                     # Get the latest daily rate
                     daily_growth = daily_rates[-1]
@@ -232,7 +272,6 @@ def create_overview_tab(filtered_df):
                 'Bolt': '24 hours',
                 'Blast': '2.5 days',
                 'Blitz': '4 days'
-
             }
             
             # Get all item types and find speedup items
@@ -241,7 +280,7 @@ def create_overview_tab(filtered_df):
                 if isinstance(items, dict):
                     all_items.update(items.keys())
             
-            # Find speedup items in the data (in order of time)
+            # Find speedup items in data (in order of time)
             available_speedups = []
             for speedup_key in speedup_items.keys():  # Use keys() to maintain order
                 for item_name in all_items:
