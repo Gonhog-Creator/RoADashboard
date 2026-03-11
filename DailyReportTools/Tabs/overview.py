@@ -54,8 +54,10 @@ def format_rate(rate, show_full=False):
         # Full rates with original st.metric styling
         return f"{int(rate):+,}/day"
     else:
-        # Abbreviated rates
-        if abs(rate) >= 1_000_000:
+        # Abbreviated rates - use largest common number format
+        if abs(rate) >= 1_000_000_000:
+            return f"{rate/1_000_000_000:.1f}B/day"
+        elif abs(rate) >= 1_000_000:
             return f"{rate/1_000_000:.1f}M/day"
         elif abs(rate) >= 1_000:
             return f"{rate/1_000:.1f}K/day"
@@ -271,7 +273,10 @@ def create_overview_tab(filtered_df):
                 'Bore': '15 hours',
                 'Bolt': '24 hours',
                 'Blast': '2.5 days',
-                'Blitz': '4 days'
+                'Blitz': '4 days',
+                'Testronius Dust': '15%',
+                'Testronius Powder': '30%',
+                'Testronius Infusion': '99%'
             }
             
             # Get all item types and find speedup items
@@ -284,12 +289,12 @@ def create_overview_tab(filtered_df):
             available_speedups = []
             for speedup_key in speedup_items.keys():  # Use keys() to maintain order
                 for item_name in all_items:
-                    if speedup_key.lower() in item_name.lower():
+                    # Handle both spaces and underscores for matching
+                    search_key = speedup_key.lower().replace(' ', '_')
+                    search_name = item_name.lower()
+                    if search_key in search_name or speedup_key.lower() in search_name:
                         available_speedups.append(speedup_key)
                         break
-            
-            # Debug: Show the order of available speedups
-            st.write(f"🔍 Available speedups in order: {available_speedups}")
             
             if available_speedups:
                 # Create grid for speedup tiles (3 per row)
@@ -304,7 +309,10 @@ def create_overview_tab(filtered_df):
                                 if isinstance(items, dict):
                                     count = 0
                                     for item_name, amount in items.items():
-                                        if speedup_type.lower() in item_name.lower():
+                                        # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                        search_key = speedup_type.lower().replace(' ', '_')
+                                        search_name = item_name.lower()
+                                        if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
                                             count += amount
                                     latest_amount = count  # This will be the last value
                                 else:
@@ -318,7 +326,10 @@ def create_overview_tab(filtered_df):
                                     if isinstance(items, dict):
                                         count = 0
                                         for item_name, amount in items.items():
-                                            if speedup_type.lower() in item_name.lower():
+                                            # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                            search_key = speedup_type.lower().replace(' ', '_')
+                                            search_name = item_name.lower()
+                                            if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
                                                 count += amount
                                         values.append(count)
                                     else:
@@ -357,7 +368,23 @@ def create_overview_tab(filtered_df):
                             
                             # Create custom metric with average per player
                             st.markdown(f"""
-                            <div style="border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin: 5px 0;">
+                            <style>
+                            .speedup-tile-{speedup_type.lower().replace(' ', '-')} {{
+                                border: 1px solid #ddd;
+                                border-radius: 8px;
+                                padding: 10px;
+                                margin: 5px 0;
+                                transition: all 0.3s ease;
+                                cursor: pointer;
+                            }}
+                            .speedup-tile-{speedup_type.lower().replace(' ', '-')}:hover {{
+                                border-color: #4CAF50;
+                                box-shadow: 0 4px 8px rgba(76, 175, 80, 0.3);
+                                transform: translateY(-2px);
+                                background-color: rgba(76, 175, 80, 0.05);
+                            }}
+                            </style>
+                            <div class="speedup-tile-{speedup_type.lower().replace(' ', '-')}">
                                 <div style="font-size: 14px; font-weight: bold; color: white;">⚡ {speedup_type} ({time_duration})</div>
                                 <div style="font-size: 20px; font-weight: bold; margin: 5px 0;">{int(latest_amount):,}</div>
                                 <div style="display: flex; align-items: center; gap: 10px;">

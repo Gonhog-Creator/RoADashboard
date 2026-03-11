@@ -37,9 +37,21 @@ def create_speedups_tab(filtered_df):
     
     if not filtered_df.empty:
         # Define speedup items in increasing order of time amount
-        speedup_items = [
-            'Blink', 'Hop', 'Skip', 'Jump', 'Leap', 'Bounce', 'Bore', 'Bolt', 'Blitz', 'Blast'
-        ]
+        speedup_items = {
+            'Blink': '1 min',
+            'Hop': '5 min', 
+            'Skip': '15 min',
+            'Jump': '30 min',
+            'Leap': '2.5 hours',
+            'Bounce': '8 hours',
+            'Bore': '15 hours',
+            'Bolt': '24 hours',
+            'Blast': '2.5 days',
+            'Blitz': '4 days',
+            'Testronius Dust': '15%',
+            'Testronius Powder': '30%',
+            'Testronius Infusion': '99%'
+        }
         
         # Get all item types and find speedup items
         all_items = set()
@@ -47,12 +59,14 @@ def create_speedups_tab(filtered_df):
             if isinstance(items, dict):
                 all_items.update(items.keys())
         
-        # Find speedup items in the data
+        # Find speedup items in the data (in order of time)
         available_speedups = []
-        for item_name in all_items:
-            for speedup_key in speedup_items:
-                # Check if item name contains speedup key (case-insensitive)
-                if speedup_key.lower() in item_name.lower():
+        for speedup_key in speedup_items.keys():  # Use keys() to maintain order
+            for item_name in all_items:
+                # Handle both spaces and underscores for matching
+                search_key = speedup_key.lower().replace(' ', '_')
+                search_name = item_name.lower()
+                if search_key in search_name or speedup_key.lower() in search_name:
                     available_speedups.append(speedup_key)
                     break
         
@@ -73,6 +87,9 @@ def create_speedups_tab(filtered_df):
                     'Bolt': '#FF6347',      # Tomato
                     'Blitz': '#1E90FF',    # Dodger Blue
                     'Blast': '#FF69B4',     # Hot Pink
+                    'Testronius Powder': '#FFA500',   # Orange
+                    'Testronius Dust': '#9400D3',  # Violet
+                    'Testronius Infusion': '#00CED1'   # Dark Turquoise
                 }
                 
                 # Create charts for speedups
@@ -105,7 +122,10 @@ def create_speedups_tab(filtered_df):
                         if isinstance(items, dict):
                             count = 0
                             for item_name, amount in items.items():
-                                if speedup_type.lower() in item_name.lower():
+                                # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                search_key = speedup_type.lower().replace(' ', '_')
+                                search_name = item_name.lower()
+                                if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
                                     count += amount
                             values.append(count)
                         else:
@@ -134,7 +154,10 @@ def create_speedups_tab(filtered_df):
                             if isinstance(data_row['items'], dict):
                                 count = 0
                                 for item_name, amount in data_row['items'].items():
-                                    if speedup_type.lower() in item_name.lower():
+                                    # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                    search_key = speedup_type.lower().replace(' ', '_')
+                                    search_name = item_name.lower()
+                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
                                         count += amount
                                 sorted_values.append(count)
                             else:
