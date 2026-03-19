@@ -6,6 +6,8 @@ from plotly.subplots import make_subplots
 import os
 from datetime import datetime
 import glob
+import requests
+import json
 from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
 from Tabs.overview import create_overview_tab
@@ -40,104 +42,286 @@ def calculate_daily_rate(values, dates):
     
     return daily_rates
 
+def load_parsed_cache():
+    """Load cache of previously parsed files"""
+    cache_file = "parsed_files_cache.json"
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_parsed_cache(cache):
+    """Save cache of parsed files"""
+    cache_file = "parsed_files_cache.json"
+    try:
+        with open(cache_file, 'w') as f:
+            json.dump(cache, f)
+    except Exception as e:
+        st.warning(f"Could not save cache: {e}")
+
+def parse_single_file(file_path):
+    """Parse a single CSV file and return the data"""
+    try:
+        # Extract date from filename (handle both formats)
+        filename = os.path.basename(file_path)
+        parts = filename.split("_")
+        
+        # Handle old format: realm_Ruby_analytics_2026-03-14_235254.csv
+        if len(parts) >= 5 and parts[0] == "realm" and parts[2] == "analytics":
+            date_str = parts[3] + "_" + parts[4].replace(".csv", "")
+            # Old format has no time separators, parse as HHMMSS
+            if ":" not in date_str:
+                time_part = date_str.split("_")[1]
+                if len(time_part) == 6:  # HHMMSS format
+                    formatted_time = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"
+                    date_str = date_str.split("_")[0] + "_" + formatted_time
+        # Handle new format: Ruby_2026-03-13_15-11-58.csv
+        elif len(parts) >= 3:
+            date_str = parts[1] + "_" + parts[2].replace(".csv", "")
+            # New format uses hyphens, convert to colons
+            if "-" in date_str:
+                time_part = date_str.split("_")[1]
+                formatted_time = time_part.replace("-", ":")
+                date_str = date_str.split("_")[0] + "_" + formatted_time
+        else:
+            return None  # Skip unparseable filename
+        
+        date = datetime.strptime(date_str, "%Y-%m-%d_%H:%M:%S")
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Parse sections
+        sections = content.split('\nSection;')
+        
+        realm_data = {'date': date, 'filename': filename}
+        
+        for section in sections:
+            if 'Realm Summary' in section:
+                lines = section.strip().split('\n')
+                for line in lines:
+                    if 'Realm Name' in line:
+                        realm_data['realm_name'] = line.split(';')[1].strip('"')
+                    elif 'Total Players' in line:
+                        realm_data['total_players'] = int(line.split(';')[1])
+                    elif 'Total Power' in line:
+                        realm_data['total_power'] = int(line.split(';')[1])
+                    elif 'Average Power per Player' in line:
+                        realm_data['avg_power_per_player'] = float(line.split(';')[1])
+            
+            elif 'Resources' in section:
+                lines = section.strip().split('\n')[1:]  # Skip header
+                resources = {}
+                for line in lines:
+                    if line and ';' in line and not line.startswith('resource_type'):
+                        parts = line.split(';')
+                        if len(parts) >= 2:
+                            resource_name = parts[0]
+                            total_amount = parts[1]
+                            try:
+                                resources[resource_name] = float(total_amount)
+                            except ValueError:
+                                continue
+                realm_data['resources'] = resources
+            
+            elif 'Items' in section:
+                lines = section.strip().split('\n')[1:]  # Skip header
+                items = {}
+                for line in lines:
+                    if line and ';' in line and not line.startswith('item_definition_id'):
+                        parts = line.split(';')
+                        if len(parts) >= 2:
+                            item_name = parts[0]
+                            total_amount = parts[1]
+                            try:
+                                items[item_name] = float(total_amount)
+                            except ValueError:
+                                continue
+                realm_data['items'] = items
+        
+        return realm_data
+        
+    except Exception as e:
+        # Silently skip parsing errors to avoid sidebar clutter
+        return None
+
+def sync_from_github():
+    """Sync CSV files from GitHub repository"""
+    try:
+        # Try to get GitHub credentials from secrets
+        github_token = None
+        csv_repo_url = None
+        
+        # Check for secrets in multiple possible locations
+        if hasattr(st, 'secrets'):
+            all_secrets = dict(st.secrets)
+            
+            # Try root level first
+            if "github_token" in all_secrets:
+                github_token = st.secrets["github_token"]
+            if "csv_repo_url" in all_secrets:
+                csv_repo_url = st.secrets["csv_repo_url"]
+            
+            # Try admin_users level
+            if not github_token and "admin_users" in all_secrets:
+                admin_users = dict(st.secrets["admin_users"])
+                if "github_token" in admin_users:
+                    github_token = admin_users["github_token"]
+                if "csv_repo_url" in admin_users:
+                    csv_repo_url = admin_users["csv_repo_url"]
+        
+        if not github_token or not csv_repo_url:
+            st.error("❌ GitHub credentials not configured. Please add github_token and csv_repo_url to secrets.")
+            return False
+        
+        # Extract owner and repo from URL
+        if "/tree/" in csv_repo_url:
+            repo_parts = csv_repo_url.split("/tree/")
+            repo_base = repo_parts[0]
+            branch = repo_parts[1] if len(repo_parts) > 1 else "main"
+        else:
+            repo_base = csv_repo_url
+            branch = "main"
+        
+        # Extract owner and repo name
+        url_parts = repo_base.replace("https://github.com/", "").split("/")
+        if len(url_parts) < 2:
+            st.error("❌ Invalid repository URL format")
+            return False
+        
+        owner, repo = url_parts[0], url_parts[1]
+        
+        # API URL for repository contents
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Streamlit-Dashboard"
+        }
+        
+        st.write("🔍 Syncing from GitHub repository...")
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code == 200:
+            files = response.json()
+            csv_files = [f for f in files if f.get('name', '').endswith('.csv')]
+            
+            if not csv_files:
+                st.warning("⚠️ No CSV files found in remote repository")
+                return False
+            
+            # Ensure Daily Reports directory exists
+            os.makedirs("Daily Reports", exist_ok=True)
+            
+            synced_count = 0
+            for file_info in csv_files:
+                try:
+                    download_url = file_info.get('download_url')
+                    if not download_url:
+                        continue
+                    
+                    csv_response = requests.get(download_url, headers=headers)
+                    
+                    if csv_response.status_code == 200:
+                        filename = file_info['name']
+                        file_path = f"Daily Reports/{filename}"
+                        
+                        # Write the file
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(csv_response.text)
+                        
+                        synced_count += 1
+                        st.success(f"✅ Synced {filename}")
+                    else:
+                        st.error(f"❌ Failed to download {file_info['name']}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error processing {file_info.get('name', 'unknown')}: {e}")
+            
+            if synced_count > 0:
+                st.success(f"🎉 Successfully synced {synced_count} CSV files from GitHub!")
+                return True
+            else:
+                st.error("❌ No files were successfully synced")
+                return False
+                
+        else:
+            st.error(f"❌ GitHub API error: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        st.error(f"❌ Error syncing from GitHub: {e}")
+        return False
+
 st.set_page_config(page_title="Realm Analytics Dashboard", layout="wide")
 
-@st.cache_data(ttl=60)  # Add 60-second TTL to prevent stale cache
-def load_csv_files():
-    """Load and parse all CSV files from Daily Reports folder"""
+@st.cache_data(ttl=300)  # Increased TTL to 5 minutes since we'll handle incremental updates
+def load_csv_files_incremental():
+    """Load and parse CSV files incrementally - only process new/updated files"""
     csv_files = glob.glob("Daily Reports/*.csv")
     
     # Sort files by modification time (newest first)
     csv_files = sorted(csv_files, key=os.path.getmtime, reverse=True)
     
-    all_data = []
+    # Load cache of previously parsed files
+    parsed_cache = load_parsed_cache()
+    
+    # Track which files we need to parse
+    files_to_parse = []
+    new_cached_data = {}
     
     for file_path in csv_files:
-        try:
-            # Extract date from filename (handle both formats)
-            filename = os.path.basename(file_path)
-            parts = filename.split("_")
-            
-            # Handle old format: realm_Ruby_analytics_2026-03-14_235254.csv
-            if len(parts) >= 5 and parts[0] == "realm" and parts[2] == "analytics":
-                date_str = parts[3] + "_" + parts[4].replace(".csv", "")
-                # Old format has no time separators, parse as HHMMSS
-                if ":" not in date_str:
-                    time_part = date_str.split("_")[1]
-                    if len(time_part) == 6:  # HHMMSS format
-                        formatted_time = f"{time_part[:2]}:{time_part[2:4]}:{time_part[4:]}"
-                        date_str = date_str.split("_")[0] + "_" + formatted_time
-            # Handle new format: Ruby_2026-03-13_15-11-58.csv
-            elif len(parts) >= 3:
-                date_str = parts[1] + "_" + parts[2].replace(".csv", "")
-                # New format uses hyphens, convert to colons
-                if "-" in date_str:
-                    time_part = date_str.split("_")[1]
-                    formatted_time = time_part.replace("-", ":")
-                    date_str = date_str.split("_")[0] + "_" + formatted_time
-            else:
-                continue  # Skip unparseable filename
-            
-            date = datetime.strptime(date_str, "%Y-%m-%d_%H:%M:%S")
-            
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Parse sections
-            sections = content.split('\nSection;')
-            
-            realm_data = {'date': date, 'filename': filename}
-            
-            for section in sections:
-                if 'Realm Summary' in section:
-                    lines = section.strip().split('\n')
-                    for line in lines:
-                        if 'Realm Name' in line:
-                            realm_data['realm_name'] = line.split(';')[1].strip('"')
-                        elif 'Total Players' in line:
-                            realm_data['total_players'] = int(line.split(';')[1])
-                        elif 'Total Power' in line:
-                            realm_data['total_power'] = int(line.split(';')[1])
-                        elif 'Average Power per Player' in line:
-                            realm_data['avg_power_per_player'] = float(line.split(';')[1])
-                
-                elif 'Resources' in section:
-                    lines = section.strip().split('\n')[1:]  # Skip header
-                    resources = {}
-                    for line in lines:
-                        if line and ';' in line and not line.startswith('resource_type'):
-                            parts = line.split(';')
-                            if len(parts) >= 2:
-                                resource_name = parts[0]
-                                total_amount = parts[1]
-                                try:
-                                    resources[resource_name] = float(total_amount)
-                                except ValueError:
-                                    continue
-                    realm_data['resources'] = resources
-                
-                elif 'Items' in section:
-                    lines = section.strip().split('\n')[1:]  # Skip header
-                    items = {}
-                    for line in lines:
-                        if line and ';' in line and not line.startswith('item_definition_id'):
-                            parts = line.split(';')
-                            if len(parts) >= 2:
-                                item_name = parts[0]
-                                total_amount = parts[1]
-                                try:
-                                    items[item_name] = float(total_amount)
-                                except ValueError:
-                                    continue
-                    realm_data['items'] = items
-            
-            all_data.append(realm_data)
-            
-        except Exception as e:
-            # Silently skip parsing errors to avoid sidebar clutter
-            pass
+        file_mtime = os.path.getmtime(file_path)
+        filename = os.path.basename(file_path)
+        
+        # Check if file is in cache and hasn't been modified
+        if filename in parsed_cache and parsed_cache[filename]['mtime'] == file_mtime:
+            # Use cached data
+            new_cached_data[filename] = parsed_cache[filename]
+        else:
+            # Need to parse this file
+            files_to_parse.append(file_path)
+    
+    # Parse only new/modified files
+    new_parsed_count = 0
+    for file_path in files_to_parse:
+        file_mtime = os.path.getmtime(file_path)
+        filename = os.path.basename(file_path)
+        
+        parsed_data = parse_single_file(file_path)
+        if parsed_data:
+            # Add to cache with modification time
+            new_cached_data[filename] = {
+                'data': parsed_data,
+                'mtime': file_mtime
+            }
+            new_parsed_count += 1
+    
+    # Save updated cache
+    if new_parsed_count > 0:
+        save_parsed_cache(new_cached_data)
+        st.info(f"📊 Processed {new_parsed_count} new/updated files")
+    
+    # Extract all data from cache
+    all_data = []
+    for filename, file_info in new_cached_data.items():
+        all_data.append(file_info['data'])
+    
+    # Sort by date
+    all_data.sort(key=lambda x: x['date'])
     
     return pd.DataFrame(all_data)
+
+# Fallback to original function for compatibility
+@st.cache_data(ttl=60)
+def load_csv_files():
+    """Load and parse all CSV files from Daily Reports folder (legacy function)"""
+    return load_csv_files_incremental()
 
 # Load data first
 df = load_csv_files()
@@ -346,10 +530,20 @@ st.sidebar.markdown("""
 # Add cache clear button at bottom
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Re-sync Database"):
-    # Clear cache and force reload
-    st.cache_data.clear()
-    st.success("Database re-synced! Reloading...")
-    st.rerun()
+    # Clear the parsed files cache to force fresh parsing
+    cache_file = "parsed_files_cache.json"
+    if os.path.exists(cache_file):
+        os.remove(cache_file)
+        st.info("🗑️ Cleared parsing cache")
+    
+    # Sync from GitHub first
+    sync_success = sync_from_github()
+    
+    if sync_success:
+        # Clear Streamlit cache and force reload
+        st.cache_data.clear()
+        st.success("Database re-synced! Reloading...")
+        st.rerun()
 
 if st.sidebar.button("Clear Cache & Reload"):
     st.cache_data.clear()
