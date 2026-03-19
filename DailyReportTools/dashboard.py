@@ -134,7 +134,8 @@ def load_csv_files():
             all_data.append(realm_data)
             
         except Exception as e:
-            st.error(f"Error parsing {filename}: {e}")
+            # Silently skip parsing errors to avoid sidebar clutter
+            pass
     
     return pd.DataFrame(all_data)
 
@@ -344,6 +345,12 @@ st.sidebar.markdown("""
 
 # Add cache clear button at bottom
 st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Re-sync Database"):
+    # Clear cache and force reload
+    st.cache_data.clear()
+    st.success("Database re-synced! Reloading...")
+    st.rerun()
+
 if st.sidebar.button("Clear Cache & Reload"):
     st.cache_data.clear()
     st.rerun()
