@@ -164,5 +164,72 @@ def create_resources_tab(filtered_df):
                 fig_resources.update_yaxes(title_text="Daily Change (Raw Amount)", row=i+1, col=2)
             
             st.plotly_chart(fig_resources, use_container_width=True)
+            
+            # Combined Resources Line Chart
+            st.markdown("---")
+            st.markdown("### 📈 All Resources Over Time")
+
+            # Add resource selection toggles
+            st.markdown("**Select Resources to Display:**")
+            resource_cols = st.columns(len(selected_resources))
+            selected_resources_display = []
+
+            for i, resource in enumerate(selected_resources):
+                with resource_cols[i]:
+                    # Default all resources to selected
+                    is_selected = st.checkbox(
+                        resource.title(), 
+                        value=True,
+                        key=f"show_resource_{resource}"
+                    )
+                    if is_selected:
+                        selected_resources_display.append(resource)
+
+            if selected_resources_display:
+                # Create a combined line chart for selected resources
+                fig_combined = go.Figure()
+                
+                for resource in selected_resources_display:
+                    # Get color for this resource
+                    color = resource_colors.get(resource.title(), '#333333')
+                    
+                    # Get values for this resource
+                    values = []
+                    for resources in filtered_df['resources']:
+                        if isinstance(resources, dict) and resource in resources:
+                            values.append(resources[resource])
+                        else:
+                            values.append(0)
+                    
+                    fig_combined.add_trace(
+                        go.Scatter(
+                            x=filtered_df['date'],
+                            y=values,
+                            mode='lines+markers',
+                            name=resource.title(),
+                            line=dict(color=color, width=2),
+                            marker=dict(size=4),
+                            hovertemplate=f'<b>{resource.title()}</b><br>Date: %{{x}}<br>Amount: %{{y:,.0f}}<extra></extra>'
+                        )
+                    )
+                
+                fig_combined.update_layout(
+                    title="All Resources - Combined Trend",
+                    xaxis_title="Date",
+                    yaxis_title="Amount",
+                    hovermode='x unified',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    ),
+                    height=500
+                )
+                
+                st.plotly_chart(fig_combined, use_container_width=True)
+            else:
+                st.info("Please select at least one resource to display")
     else:
         st.info("No resource data available")

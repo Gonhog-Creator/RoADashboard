@@ -23,7 +23,7 @@ def calculate_daily_rate(sorted_df, value_column):
             # Calculate time difference in days
             time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
             
-            if time_diff > 0.1:  # Only calculate rate if time difference is significant
+            if time_diff > 0:  # Only calculate rate if time difference is significant
                 # Calculate daily rate (change per day)
                 change = current_value - previous_value
                 daily_rate = change / time_diff
