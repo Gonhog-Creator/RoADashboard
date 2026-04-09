@@ -47,6 +47,27 @@ def calculate_daily_rate(values, dates):
     
     return daily_rates
 
+def get_realm_name(realm_id):
+    """Convert realm ID to realm name"""
+    realm_mapping = {
+        # Add realm ID to name mappings here
+        # Current realm
+        '1': 'Ruby',
+        'ruby': 'Ruby',
+        'Ruby': 'Ruby',
+        # Add more realms as needed
+        # '2': 'Emerald',
+        # '3': 'Diamond',
+        # '4': 'Sapphire',
+    }
+    
+    # Handle both numeric and string realm IDs
+    if str(realm_id).lower() in realm_mapping:
+        return realm_mapping[str(realm_id).lower()]
+    else:
+        # Return the ID as-is if not mapped
+        return str(realm_id)
+
 def process_player_creation_dates(filtered_df):
     """Process player creation dates to generate accurate player count over time"""
     if filtered_df.empty:
@@ -595,7 +616,12 @@ with col2:
     if not df.empty:
         latest_row = df.iloc[-1]
         # Handle different realm name fields
-        realm_name = latest_row.get('realm_name', latest_row.get('realm_id', 'Unknown Realm'))
+        if 'realm_name' in latest_row:
+            realm_name = latest_row['realm_name']
+        elif 'realm_id' in latest_row:
+            realm_name = get_realm_name(latest_row['realm_id'])
+        else:
+            realm_name = 'Unknown Realm'
         st.markdown(f"**Realm:** {realm_name}")
 
 if df.empty:
@@ -610,7 +636,12 @@ else:
         latest_date = latest_report['date']
         latest_date_str = latest_date.strftime("%Y-%m-%d %H:%M:%S")
         # Handle different realm name fields
-        realm_name = latest_report.get('realm_name', latest_report.get('realm_id', 'Unknown Realm'))
+        if 'realm_name' in latest_report:
+            realm_name = latest_report['realm_name']
+        elif 'realm_id' in latest_report:
+            realm_name = get_realm_name(latest_report['realm_id'])
+        else:
+            realm_name = 'Unknown Realm'
         
         st.sidebar.markdown("### 📊 Latest Report")
         st.sidebar.markdown(f"**Date:** {latest_date_str}")
@@ -796,9 +827,15 @@ else:
         raw_data_df['TotalPower'] = raw_data_df['total_power']
         raw_data_df['AvgPowerPerPlayer'] = raw_data_df['avg_power_per_player']
         
-        # Select columns to display (handle realm_name vs realm_id)
-        realm_col = 'realm_name' if 'realm_name' in raw_data_df.columns else 'realm_id'
-        display_columns = ['date', realm_col, 'total_players', 'TotalPower', 'AvgPowerPerPlayer'] + [f'{resource.title()}Sum' for resource in main_resources]
+        # Handle realm name/ID and create display column
+        if 'realm_name' in raw_data_df.columns:
+            raw_data_df['RealmName'] = raw_data_df['realm_name']
+        elif 'realm_id' in raw_data_df.columns:
+            raw_data_df['RealmName'] = raw_data_df['realm_id'].apply(get_realm_name)
+        else:
+            raw_data_df['RealmName'] = 'Unknown Realm'
+        
+        display_columns = ['date', 'RealmName', 'total_players', 'TotalPower', 'AvgPowerPerPlayer'] + [f'{resource.title()}Sum' for resource in main_resources]
         
         # Format the dataframe with commas for numbers
         formatted_df = raw_data_df[display_columns].copy()
