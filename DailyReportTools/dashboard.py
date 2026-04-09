@@ -51,7 +51,9 @@ def get_realm_name(realm_id):
     """Convert realm ID to realm name"""
     realm_mapping = {
         # Add realm ID to name mappings here
-        # Current realm
+        # Current realm (actual UUID from CSV)
+        'ad5fb84b-1cb6-46ec-bc45-58dd610e6d22': 'Ruby',
+        # Legacy mappings for compatibility
         '1': 'Ruby',
         'ruby': 'Ruby',
         'Ruby': 'Ruby',
