@@ -11,7 +11,7 @@ from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
 from Tabs.overview import create_overview_tab
 from Tabs.power import create_power_tab
-from Tabs.items_enhanced import create_items_tab
+from Tabs.items import create_items_tab
 from Tabs.troops import create_troops_tab
 from Tabs.buildings import create_buildings_tab
 from Tabs.skins import create_skins_tab

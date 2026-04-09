@@ -128,18 +128,37 @@ def create_items_tab(df):
     
     st.markdown("### 📦 Item Analysis")
     
+    # Check if we have comprehensive data format
+    latest_data = df.iloc[-1]
+    use_comprehensive = 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None
+    
     # Extract all unique items from all reports and check if they have any quantity > 0
     all_items = set()
     items_with_history = set()  # Track items that actually have data
     
-    for _, row in df.iterrows():
-        if 'items' in row and isinstance(row['items'], dict):
-            for item_name, quantity in row['items'].items():
-                if item_name and item_name.strip():
-                    all_items.add(item_name)
-                    # Only add to items_with_history if quantity > 0
-                    if quantity > 0:
-                        items_with_history.add(item_name)
+    if use_comprehensive:
+        # Comprehensive CSV format - extract from raw_player_data
+        for _, row in df.iterrows():
+            if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                player_df = row['raw_player_data']
+                if isinstance(player_df, pd.DataFrame):
+                    item_columns = [col for col in player_df.columns if col.startswith('item_')]
+                    for col in item_columns:
+                        item_name = col.replace('item_', '')
+                        total_count = player_df[col].fillna(0).sum()
+                        if total_count > 0:
+                            all_items.add(item_name)
+                            items_with_history.add(item_name)
+    else:
+        # Legacy format - extract from items dictionary
+        for _, row in df.iterrows():
+            if 'items' in row and isinstance(row['items'], dict):
+                for item_name, quantity in row['items'].items():
+                    if item_name and item_name.strip():
+                        all_items.add(item_name)
+                        # Only add to items_with_history if quantity > 0
+                        if quantity > 0:
+                            items_with_history.add(item_name)
     
     # Filter out items that have never had any quantity
     valid_items = items_with_history
@@ -218,13 +237,28 @@ def create_items_tab(df):
                 # Create time series data for selected item
                 item_data = []
                 for _, row in df.iterrows():
-                    if 'items' in row and isinstance(row['items'], dict):
-                        quantity = row['items'].get(original_name, 0)
-                        if quantity > 0:  # Only include if item exists and has quantity
-                            item_data.append({
-                                'date': row['date'],
-                                'quantity': quantity
-                            })
+                    if use_comprehensive:
+                        # Comprehensive CSV format - extract from raw_player_data
+                        if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                            player_df = row['raw_player_data']
+                            if isinstance(player_df, pd.DataFrame):
+                                item_col = f'item_{original_name}'
+                                if item_col in player_df.columns:
+                                    quantity = player_df[item_col].fillna(0).sum()
+                                    if quantity > 0:
+                                        item_data.append({
+                                            'date': row['date'],
+                                            'quantity': quantity
+                                        })
+                    else:
+                        # Legacy format - extract from items dictionary
+                        if 'items' in row and isinstance(row['items'], dict):
+                            quantity = row['items'].get(original_name, 0)
+                            if quantity > 0:  # Only include if item exists and has quantity
+                                item_data.append({
+                                    'date': row['date'],
+                                    'quantity': quantity
+                                })
                 
                 if not item_data:
                     continue
@@ -317,10 +351,22 @@ def create_items_tab(df):
                 # Get latest data for each item
                 item_data = []
                 for _, row in df.iterrows():
-                    if 'items' in row and isinstance(row['items'], dict):
-                        quantity = row['items'].get(original_name, 0)
-                        if quantity > 0:
-                            item_data.append(quantity)
+                    if use_comprehensive:
+                        # Comprehensive CSV format - extract from raw_player_data
+                        if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                            player_df = row['raw_player_data']
+                            if isinstance(player_df, pd.DataFrame):
+                                item_col = f'item_{original_name}'
+                                if item_col in player_df.columns:
+                                    quantity = player_df[item_col].fillna(0).sum()
+                                    if quantity > 0:
+                                        item_data.append(quantity)
+                    else:
+                        # Legacy format - extract from items dictionary
+                        if 'items' in row and isinstance(row['items'], dict):
+                            quantity = row['items'].get(original_name, 0)
+                            if quantity > 0:
+                                item_data.append(quantity)
                 
                 if item_data:
                     summary_data.append({

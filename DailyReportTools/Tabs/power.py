@@ -164,33 +164,21 @@ def create_power_tab(filtered_df):
                     if bucket_data:
                         bucket_df = pd.DataFrame(bucket_data)
                         
-                        # Display bucket metrics
-                        bucket_col1, bucket_col2, bucket_col3 = st.columns(3)
-                        
-                        with bucket_col1:
-                            st.metric("Power Buckets", f"{len(bucket_df)}")
-                        
-                        with bucket_col2:
-                            largest_bucket = bucket_df.loc[bucket_df['Player Count'].idxmax()]
-                            st.metric("Largest Bucket", largest_bucket['Power Range'])
-                        
-                        with bucket_col3:
-                            st.metric("Total Analyzed", f"{len(power_data):,}")
-                        
                         # Bucket distribution chart
                         fig_buckets = px.bar(
                             bucket_df,
-                            x='Player Count',
-                            y='Power Range',
-                            orientation='h',
+                            x='Power Range',
+                            y='Player Count',
                             title='Player Distribution by Power Buckets',
-                            color='Percentage',
-                            color_continuous_scale='viridis'
+                            hover_data={'Percentage': ':.1f%', 'Total Power': ':,'}
                         )
                         fig_buckets.update_layout(
-                            xaxis_title="Number of Players",
-                            yaxis_title="Power Range",
+                            xaxis_title="Power Range",
+                            yaxis_title="Number of Players",
                             height=400
+                        )
+                        fig_buckets.update_traces(
+                            hovertemplate='<b>%{x}</b><br>Players: %{y}<br>Percentage: %{customdata[0]:.1f}%<br>Total Power: %{customdata[1]:,}<extra></extra>'
                         )
                         st.plotly_chart(fig_buckets, use_container_width=True)
                         
@@ -201,35 +189,50 @@ def create_power_tab(filtered_df):
                         bucket_display_df.columns = ['Power Range', 'Players', '% of Total', 'Total Power']
                         st.dataframe(bucket_display_df, use_container_width=True)
         
-        # Top 5 Players by Power
-        st.markdown("#### Top 5 Players by Power")
+        # Top 10 Players by Power
+        st.markdown("#### Top 10 Players by Power")
         
         if 'raw_player_data' in latest_data:
             player_df = latest_data['raw_player_data']
             
             if isinstance(player_df, pd.DataFrame) and not player_df.empty and 'power' in player_df.columns:
-                top_players = player_df.nlargest(5, 'power')[['account_id', 'power', 'alliance_name', 'created_at']]
+                top_players = player_df.nlargest(10, 'power')[['account_id', 'power', 'alliance_name', 'username']]
                 
                 if not top_players.empty:
-                    for i, (_, player) in enumerate(top_players.iterrows(), 1):
-                        account_id = player['account_id'][:8] + "..." if len(player['account_id']) > 8 else player['account_id']
-                        power = int(player['power'])
-                        alliance = player.get('alliance_name', 'None')
-                        created = player.get('created_at', 'Unknown')
+                    # Display in smaller tiles using 2 rows of 5 columns
+                    for row in range(2):
+                        cols = st.columns(5)
                         
-                        with st.expander(f"#{i} {account_id} - {format_number(power, show_full_numbers)} power", expanded=i==1):
-                            col1, col2, col3 = st.columns(3)
+                        for col in range(5):
+                            idx = row * 5 + col
+                            if idx >= len(top_players):
+                                break
                             
-                            with col1:
-                                st.metric("Power", format_number(power, show_full_numbers))
-                            with col2:
-                                st.metric("Alliance", alliance)
-                            with col3:
-                                st.metric("Created", created)
+                            player = top_players.iloc[idx]
+                            
+                            # Use username if available, otherwise use account ID
+                            if 'username' in player and pd.notna(player['username']):
+                                player_name = str(player['username'])
+                            else:
+                                account_id = str(player['account_id'])[:8] + "..." if len(str(player['account_id'])) > 8 else str(player['account_id'])
+                                player_name = account_id
+                            
+                            power = int(player['power'])
+                            alliance = player.get('alliance_name', 'None')
                             
                             # Show power percentage of total
                             power_percentage = (power / total_power * 100) if total_power > 0 else 0
-                            st.metric("% of Realm Power", f"{power_percentage:.2f}%")
+                            
+                            with cols[col]:
+                                tile_content = f"""
+                                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 5px;">
+                                    <h4 style="margin: 0 0 8px 0; color: white; font-size: 0.9em;">#{idx+1} {player_name}</h4>
+                                    <p style="margin: 0 0 8px 0; font-size: 1.1em; font-weight: bold; color: #1f77b4;">{format_number(power, show_full_numbers)}</p>
+                                    <p style="margin: 0 0 4px 0; font-size: 0.85em;">Alliance: {alliance}</p>
+                                    <p style="margin: 0; font-size: 0.85em;">% of Realm: {power_percentage:.2f}%</p>
+                                </div>
+                                """
+                                st.markdown(tile_content, unsafe_allow_html=True)
         
         # Enhanced Charts Section
         st.markdown("---")
@@ -237,17 +240,13 @@ def create_power_tab(filtered_df):
         
         # Create comprehensive power charts
         fig_power = make_subplots(
-            rows=2, cols=2,
+            rows=1, cols=2,
             subplot_titles=[
                 "Total Power Over Time",
-                "Power Changes",
-                "Power per Player Trend",
-                "Power Growth Rate"
+                "Power Changes"
             ],
-            vertical_spacing=0.15,
             horizontal_spacing=0.1,
             specs=[
-                [{"secondary_y": False}, {"secondary_y": False}],
                 [{"secondary_y": False}, {"secondary_y": False}]
             ]
         )
@@ -297,39 +296,9 @@ def create_power_tab(filtered_df):
             row=1, col=2
         )
         
-        # 3. Power per Player Trend
-        fig_power.add_trace(
-            go.Scatter(
-                x=sorted_df['date'],
-                y=sorted_df['avg_power_per_player'],
-                mode='lines+markers',
-                name='Power per Player',
-                line=dict(color='#95E77E', width=3),
-                marker=dict(size=6),
-                hovertemplate='<b>Power per Player</b><br>Date: %{x}<br>Power: %{y:,.0f}<extra></extra>'
-            ),
-            row=2, col=1
-        )
-        
-        # 4. Power Growth Rate
-        if len(sorted_df) >= 2:
-            growth_rates = calculate_daily_rate(sorted_df, 'total_power')
-            fig_power.add_trace(
-                go.Scatter(
-                    x=sorted_df['date'],
-                    y=growth_rates,
-                    mode='lines+markers',
-                    name='Growth Rate',
-                    line=dict(color='#FFD93D', width=3),
-                    marker=dict(size=6),
-                    hovertemplate='<b>Growth Rate</b><br>Date: %{x}<br>Rate: %{y:,.0f}/day<extra></extra>'
-                ),
-                row=2, col=2
-            )
-        
         # Update layout
         fig_power.update_layout(
-            height=600,
+            height=400,
             showlegend=False,
             title_text="Comprehensive Power Analytics Dashboard",
             title_x=0.5
@@ -338,13 +307,9 @@ def create_power_tab(filtered_df):
         # Update axes labels
         fig_power.update_xaxes(title_text="Date", row=1, col=1)
         fig_power.update_xaxes(title_text="Date", row=1, col=2)
-        fig_power.update_xaxes(title_text="Date", row=2, col=1)
-        fig_power.update_xaxes(title_text="Date", row=2, col=2)
         
         fig_power.update_yaxes(title_text="Total Power", row=1, col=1)
         fig_power.update_yaxes(title_text="Daily Change", row=1, col=2)
-        fig_power.update_yaxes(title_text="Power per Player", row=2, col=1)
-        fig_power.update_yaxes(title_text="Growth Rate (/day)", row=2, col=2)
         
         st.plotly_chart(fig_power, use_container_width=True)
         
@@ -355,7 +320,18 @@ def create_power_tab(filtered_df):
             # Get top 10 players from latest data
             latest_player_df = latest_data['raw_player_data']
             if isinstance(latest_player_df, pd.DataFrame) and not latest_player_df.empty and 'power' in latest_player_df.columns:
-                top_10_players = latest_player_df.nlargest(10, 'power')['account_id'].tolist()
+                top_10_players_data = latest_player_df.nlargest(10, 'power')[['account_id', 'username']]
+                
+                # Create mapping of account_id to player name
+                player_name_mapping = {}
+                for _, player in top_10_players_data.iterrows():
+                    account_id = player['account_id']
+                    if 'username' in player and pd.notna(player['username']):
+                        player_name_mapping[account_id] = str(player['username'])
+                    else:
+                        player_name_mapping[account_id] = str(account_id)[:8] + "..."
+                
+                top_10_players = top_10_players_data['account_id'].tolist()
                 
                 # Track their power over time
                 player_growth_data = []
@@ -373,7 +349,7 @@ def create_power_tab(filtered_df):
                                     power = player_row['power'].iloc[0]
                                     player_growth_data.append({
                                         'Date': date,
-                                        'Player': player_id[:8] + "...",
+                                        'Player': player_name_mapping.get(player_id, str(player_id)[:8] + "..."),
                                         'Power': power
                                     })
                 
