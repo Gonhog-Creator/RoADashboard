@@ -137,14 +137,16 @@ def create_power_tab(filtered_df):
                 min_power = power_data.min()
                 
                 if max_power > min_power:
-                    # Create custom buckets
+                    # Create custom buckets with only ranges
                     bucket_ranges = [
-                        (0, 1000, "New Players (0-1K)"),
-                        (1000, 10000, "Early Game (1K-10K)"),
-                        (10000, 100000, "Mid Game (10K-100K)"),
-                        (100000, 1000000, "Late Game (100K-1M)"),
-                        (1000000, 10000000, "End Game (1M-10M)"),
-                        (10000000, float('inf'), "Whales (10M+)")
+                        (0, 1000, "0-1K"),
+                        (1000, 10000, "1K-10K"),
+                        (10000, 100000, "10K-100K"),
+                        (100000, 1000000, "100K-1M"),
+                        (1000000, 10000000, "1M-10M"),
+                        (10000000, 50000000, "10M-50M"),
+                        (50000000, 100000000, "50M-100M"),
+                        (100000000, float('inf'), "100M+")
                     ]
                     
                     bucket_data = []
@@ -184,9 +186,14 @@ def create_power_tab(filtered_df):
                         
                         # Bucket details table
                         bucket_display_df = bucket_df.copy()
+                        
+                        # Calculate percentage of total power
+                        total_realm_power = bucket_display_df['Total Power'].sum()
+                        bucket_display_df['% of Total Power'] = (bucket_display_df['Total Power'] / total_realm_power * 100).apply(lambda x: f"{x:.1f}%")
+                        
                         bucket_display_df['Total Power'] = bucket_display_df['Total Power'].apply(lambda x: f"{int(x):,}")
                         bucket_display_df['Percentage'] = bucket_display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-                        bucket_display_df.columns = ['Power Range', 'Players', '% of Total', 'Total Power']
+                        bucket_display_df.columns = ['Power Range', 'Players', '% of Total Playerbase', 'Total Power', '% of Total Power']
                         st.dataframe(bucket_display_df, use_container_width=True)
         
         # Top 10 Players by Power
@@ -226,8 +233,8 @@ def create_power_tab(filtered_df):
                             with cols[col]:
                                 tile_content = f"""
                                 <div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 5px;">
-                                    <h4 style="margin: 0 0 8px 0; color: white; font-size: 0.9em;">#{idx+1} {player_name}</h4>
-                                    <p style="margin: 0 0 8px 0; font-size: 1.1em; font-weight: bold; color: #1f77b4;">{format_number(power, show_full_numbers)}</p>
+                                    <h4 style="margin: 0 0 8px 0; color: white; font-size: 1.5em;">#{idx+1} {player_name}</h4>
+                                    <p style="margin: 0 0 8px 0; font-size: 1.5em; font-weight: bold; color: #1f77b4;">{format_number(power, show_full_numbers)}</p>
                                     <p style="margin: 0 0 4px 0; font-size: 0.85em;">Alliance: {alliance}</p>
                                     <p style="margin: 0; font-size: 0.85em;">% of Realm: {power_percentage:.2f}%</p>
                                 </div>
