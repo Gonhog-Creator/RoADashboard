@@ -47,6 +47,65 @@ def calculate_daily_rate(values, dates):
     
     return daily_rates
 
+def process_player_creation_dates(filtered_df):
+    """Process player creation dates to generate accurate player count over time"""
+    if filtered_df.empty:
+        return filtered_df
+    
+    # Look for comprehensive data with player creation dates
+    comprehensive_data = None
+    for _, row in filtered_df.iterrows():
+        if 'raw_player_data' in row and row['raw_player_data'] is not None:
+            comprehensive_data = row
+            break
+    
+    if comprehensive_data is None:
+        return filtered_df  # Return original if no comprehensive data
+    
+    player_data = comprehensive_data['raw_player_data']
+    
+    # Check for creation date columns
+    date_column = None
+    if 'user_created_at' in player_data.columns:
+        date_column = 'user_created_at'
+    elif 'created_at' in player_data.columns:
+        date_column = 'created_at'
+    
+    if date_column is None:
+        return filtered_df  # Return original if no date columns
+    
+    # Extract and process creation dates
+    player_dates = pd.to_datetime(player_data[date_column], errors='coerce').dropna()
+    
+    if player_dates.empty:
+        return filtered_df
+    
+    # Create cumulative player counts over time
+    min_date = player_dates.min()
+    max_date = player_dates.max()
+    date_range = pd.date_range(start=min_date, end=max_date, freq='D')
+    
+    cumulative_counts = []
+    for date in date_range:
+        count = (player_dates <= date).sum()
+        cumulative_counts.append(count)
+    
+    # Create new dataframe with accurate player counts
+    player_timeline = pd.DataFrame({
+        'date': date_range,
+        'total_players': cumulative_counts
+    })
+    
+    # Replace the total_players in filtered_df with accurate data
+    updated_df = filtered_df.copy()
+    
+    # Update each row's total_players based on the closest date in player_timeline
+    for idx, row in updated_df.iterrows():
+        closest_date = player_timeline.iloc[(player_timeline['date'] - row['date']).abs().argmin()]
+        updated_df.at[idx, 'total_players'] = closest_date['total_players']
+    
+    return updated_df
+
 def save_parsed_cache(cache):
     """Save cache of parsed files"""
     cache_file = "parsed_files_cache.json"
@@ -534,7 +593,9 @@ with col1:
 
 with col2:
     if not df.empty:
-        realm_name = df.iloc[-1]['realm_name']
+        latest_row = df.iloc[-1]
+        # Handle different realm name fields
+        realm_name = latest_row.get('realm_name', latest_row.get('realm_id', 'Unknown Realm'))
         st.markdown(f"**Realm:** {realm_name}")
 
 if df.empty:
@@ -548,7 +609,8 @@ else:
         latest_report = df.iloc[-1]
         latest_date = latest_report['date']
         latest_date_str = latest_date.strftime("%Y-%m-%d %H:%M:%S")
-        realm_name = latest_report.get('realm_name', 'Unknown')
+        # Handle different realm name fields
+        realm_name = latest_report.get('realm_name', latest_report.get('realm_id', 'Unknown Realm'))
         
         st.sidebar.markdown("### 📊 Latest Report")
         st.sidebar.markdown(f"**Date:** {latest_date_str}")
@@ -579,6 +641,9 @@ else:
     
     # Sort filtered data by date to ensure chronological order in charts
     filtered_df = filtered_df.sort_values('date')
+    
+    # Process player creation dates for accurate player counts
+    filtered_df = process_player_creation_dates(filtered_df)
     
     # Tabs for different views
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(["Overview", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research", "Ceasefire"])
@@ -731,8 +796,9 @@ else:
         raw_data_df['TotalPower'] = raw_data_df['total_power']
         raw_data_df['AvgPowerPerPlayer'] = raw_data_df['avg_power_per_player']
         
-        # Select columns to display
-        display_columns = ['date', 'realm_name', 'total_players', 'TotalPower', 'AvgPowerPerPlayer'] + [f'{resource.title()}Sum' for resource in main_resources]
+        # Select columns to display (handle realm_name vs realm_id)
+        realm_col = 'realm_name' if 'realm_name' in raw_data_df.columns else 'realm_id'
+        display_columns = ['date', realm_col, 'total_players', 'TotalPower', 'AvgPowerPerPlayer'] + [f'{resource.title()}Sum' for resource in main_resources]
         
         # Format the dataframe with commas for numbers
         formatted_df = raw_data_df[display_columns].copy()
