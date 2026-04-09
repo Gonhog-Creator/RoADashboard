@@ -51,6 +51,18 @@ def get_realm_name(realm_id):
     """Convert realm ID to realm name"""
     return 'Ruby'
 
+def get_latest_commit_message():
+    """Get the latest git commit message"""
+    try:
+        import subprocess
+        result = subprocess.run(['git', 'log', '-1', '--pretty=format:%B'], 
+                              capture_output=True, text=True, cwd='.')
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return None
+    except Exception:
+        return None
+
 def process_player_creation_dates(filtered_df):
     """Process player creation dates to generate accurate player count over time"""
     if filtered_df.empty:
@@ -662,11 +674,16 @@ else:
         elif 'realm_id' in latest_report and pd.notna(latest_report['realm_id']):
             realm_name = get_realm_name(latest_report['realm_id'])
         
+        # Get latest commit message
+        latest_commit = get_latest_commit_message()
+        
         st.sidebar.markdown("### 📊 Latest Report")
         st.sidebar.markdown(f"**Database Update:** {database_date_str}")
         st.sidebar.markdown(f"**Dashboard Update:** {dashboard_date_str}")
         st.sidebar.markdown(f"**Realm:** {realm_name}")
         st.sidebar.markdown(f"**Total Reports:** {len(df)}")
+        if latest_commit:
+            st.sidebar.markdown(f"**Latest Commit:** {latest_commit}")
     
     # Date range filter
     df['date'] = pd.to_datetime(df['date'])
