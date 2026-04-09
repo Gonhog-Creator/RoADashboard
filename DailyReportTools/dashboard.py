@@ -75,29 +75,39 @@ def process_player_creation_dates(filtered_df):
     if filtered_df.empty:
         return filtered_df
     
-    # Look for comprehensive data with player creation dates
-    comprehensive_data = None
+    # Find the latest comprehensive data file (most recent date)
+    latest_comprehensive_data = None
+    latest_date = None
+    
     for _, row in filtered_df.iterrows():
         if 'raw_player_data' in row and row['raw_player_data'] is not None:
-            comprehensive_data = row
-            break
+            # Check if this is a comprehensive data file
+            if hasattr(row, 'filename') and 'comprehensive_player_data' in str(getattr(row, 'filename', '')):
+                # Use the most recent comprehensive file
+                if latest_date is None or row['date'] > latest_date:
+                    latest_date = row['date']
+                    latest_comprehensive_data = row['raw_player_data']
+            elif latest_comprehensive_data is None:
+                # Fallback: use the first comprehensive data found
+                latest_comprehensive_data = row['raw_player_data']
+                latest_date = row['date']
     
-    if comprehensive_data is None:
+    if latest_comprehensive_data is None:
         return filtered_df  # Return original if no comprehensive data
     
-    player_data = comprehensive_data['raw_player_data']
+    player_data = latest_comprehensive_data
     
     # Check for creation date columns
     date_column = None
-    if 'user_created_at' in player_data.columns:
-        date_column = 'user_created_at'
-    elif 'created_at' in player_data.columns:
+    if 'created_at' in player_data.columns:
         date_column = 'created_at'
+    elif 'user_created_at' in player_data.columns:
+        date_column = 'user_created_at'
     
     if date_column is None:
         return filtered_df  # Return original if no date columns
     
-    # Extract and process creation dates
+    # Extract and process creation dates from the latest comprehensive file
     player_dates = pd.to_datetime(player_data[date_column], errors='coerce').dropna()
     
     if player_dates.empty:
@@ -106,7 +116,18 @@ def process_player_creation_dates(filtered_df):
     # Create cumulative player counts over time
     min_date = player_dates.min()
     max_date = player_dates.max()
-    date_range = pd.date_range(start=min_date, end=max_date, freq='D')
+    
+    # Start from one day before the earliest player creation date to show 0 players initially
+    start_date = min_date - pd.Timedelta(days=1)
+    
+    # End at today's date
+    today = pd.Timestamp.now().normalize()
+    
+    # Use the full range from earliest creation to today
+    overall_min_date = start_date
+    overall_max_date = today
+    
+    date_range = pd.date_range(start=overall_min_date, end=overall_max_date, freq='D')
     
     cumulative_counts = []
     for date in date_range:
@@ -124,7 +145,8 @@ def process_player_creation_dates(filtered_df):
     
     # Update each row's total_players based on the closest date in player_timeline
     for idx, row in updated_df.iterrows():
-        closest_date = player_timeline.iloc[(player_timeline['date'] - row['date']).abs().argmin()]
+        closest_date_idx = (player_timeline['date'] - row['date']).abs().argmin()
+        closest_date = player_timeline.iloc[closest_date_idx]
         updated_df.at[idx, 'total_players'] = closest_date['total_players']
     
     return updated_df
@@ -771,19 +793,84 @@ else:
         st.markdown("---")
         st.subheader("📈 Player Count Over Time")
         if not filtered_df.empty:
-            fig_players = px.line(
-                filtered_df, 
-                x='date', 
-                y='total_players',
-                title='Total Players Over Time',
-                markers=True
-            )
-            fig_players.update_layout(
-                xaxis_title="Date",
-                yaxis_title="Total Players",
-                hovermode='x unified'
-            )
-            st.plotly_chart(fig_players, use_container_width=True)
+            # Create the entire graph from the latest CSV file
+            # Find the latest comprehensive data file
+            latest_comprehensive_data = None
+            latest_date = None
+            
+            for _, row in filtered_df.iterrows():
+                if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                    if hasattr(row, 'filename') and 'comprehensive_player_data' in str(getattr(row, 'filename', '')):
+                        if latest_date is None or row['date'] > latest_date:
+                            latest_date = row['date']
+                            latest_comprehensive_data = row['raw_player_data']
+                    elif latest_comprehensive_data is None:
+                        latest_comprehensive_data = row['raw_player_data']
+                        latest_date = row['date']
+            
+            if latest_comprehensive_data is not None:
+                player_data = latest_comprehensive_data
+                
+                # Check for creation date columns
+                date_column = None
+                if 'created_at' in player_data.columns:
+                    date_column = 'created_at'
+                elif 'user_created_at' in player_data.columns:
+                    date_column = 'user_created_at'
+                
+                if date_column is not None:
+                    # Extract and process creation dates from the latest comprehensive file
+                    player_dates = pd.to_datetime(player_data[date_column], errors='coerce').dropna()
+                    
+                    if not player_dates.empty:
+                        # Sort player creation dates
+                        sorted_dates = player_dates.sort_values()
+                        
+                        # Create cumulative counts at each player creation point
+                        # Start with 0 players at the earliest creation date - 1 day
+                        start_date = sorted_dates.min() - pd.Timedelta(days=1)
+                        
+                        # Create arrays for the chart
+                        chart_dates = [start_date]
+                        chart_counts = [0]
+                        
+                        # Add a point for each player creation date
+                        for i, date in enumerate(sorted_dates):
+                            chart_dates.append(date)
+                            chart_counts.append(i + 1)  # i+1 because we want cumulative count
+                        
+                        # Add today's date with final count to extend the line to present
+                        today = pd.Timestamp.now().normalize()
+                        if today > sorted_dates.max():
+                            chart_dates.append(today)
+                            chart_counts.append(len(sorted_dates))
+                        
+                        # Create dataframe for the chart
+                        chart_df = pd.DataFrame({
+                            'date': chart_dates,
+                            'total_players': chart_counts
+                        })
+                        
+                        # Create smooth line chart without markers for cleaner look
+                        fig_players = px.line(
+                            chart_df, 
+                            x='date', 
+                            y='total_players',
+                            title='Total Players Over Time',
+                            markers=False  # Remove markers for smoother line
+                        )
+                        fig_players.update_layout(
+                            xaxis_title="Date",
+                            yaxis_title="Total Players",
+                            hovermode='x unified'
+                        )
+                        st.plotly_chart(fig_players, use_container_width=True)
+                    else:
+                        st.warning("No valid player creation dates found in the latest comprehensive data file")
+                else:
+                    st.warning("No creation date column found in the latest comprehensive data file")
+            else:
+                st.warning("No comprehensive data file found")
     
     with tab3:
         create_resources_tab(filtered_df)
