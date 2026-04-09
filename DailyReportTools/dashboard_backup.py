@@ -11,7 +11,7 @@ from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
 from Tabs.overview import create_overview_tab
 from Tabs.power import create_power_tab
-from Tabs.items_enhanced import create_items_tab
+from Tabs.items import create_items_tab
 from Tabs.troops import create_troops_tab
 from Tabs.buildings import create_buildings_tab
 from Tabs.skins import create_skins_tab
@@ -444,32 +444,7 @@ def load_csv_files_incremental():
     # Sort by date
     all_data.sort(key=lambda x: x['date'])
     
-    # Create DataFrame with all data but handle complex objects properly
-    # Create a simple DataFrame first with only basic data types
-    simple_data = []
-    for data in all_data:
-        row = {}
-        for key, value in data.items():
-            if key not in ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data']:
-                row[key] = value
-        simple_data.append(row)
-    
-    df = pd.DataFrame(simple_data)
-    
-    # Now add complex objects as separate columns with object dtype
-    complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data']
-    
-    for col in complex_columns:
-        df[col] = None  # Initialize with None
-        df[col] = df[col].astype('object')  # Set as object dtype
-        
-        # Add the complex objects
-        col_data = []
-        for data in all_data:
-            col_data.append(data.get(col, None))
-        df[col] = col_data
-    
-    return df, new_parsed_count
+    return pd.DataFrame(all_data), new_parsed_count
 
 # Fallback to original function for compatibility
 def load_csv_files():
@@ -540,7 +515,7 @@ else:
     filtered_df = filtered_df.sort_values('date')
     
     # Tabs for different views
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs(["Overview", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Overview", "👥 Player Count", "📈 Resources", "⚔️ Power", "⚡ Speedups", "📦 Items"])
     
     with tab1:
         create_overview_tab(filtered_df)
@@ -657,18 +632,6 @@ else:
     
     with tab6:
         create_items_tab(filtered_df)
-    
-    with tab7:
-        create_troops_tab(filtered_df)
-    
-    with tab8:
-        create_buildings_tab(filtered_df)
-    
-    with tab9:
-        create_skins_tab(filtered_df)
-    
-    with tab10:
-        create_quests_research_tab(filtered_df)
     
     # Data table
     with st.expander("📋 Raw Data"):
