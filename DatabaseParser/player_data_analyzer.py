@@ -265,16 +265,15 @@ class PlayerDataAnalyzer:
             player_data['total_item_count'] = total_item_count
             player_data['unique_item_types'] = '|'.join(unique_item_types)
             
-            # Count items by type
+            # Count items by type and store as JSON
             item_counts = defaultdict(int)
             for item in items:
                 item_type = item.get('definition_id', '')
                 count = int(item.get('count', 0))
                 item_counts[item_type] += count
             
-            # Add item counts for all known item types from registry
-            for item_type in item_registry.keys():
-                player_data[f'item_{item_type}'] = item_counts.get(item_type, 0)
+            # Store items as JSON string instead of individual columns
+            player_data['items_json'] = json.dumps(dict(item_counts))
             
             # Process troops using registry
             troops = troops_by_player.get(player_id, [])
@@ -286,16 +285,15 @@ class PlayerDataAnalyzer:
             player_data['total_troop_amount'] = total_troop_amount
             player_data['unique_troop_types'] = '|'.join(unique_troop_types)
             
-            # Count troops by type
+            # Count troops by type and store as JSON
             troop_counts = defaultdict(int)
             for troop in troops:
                 troop_type = troop.get('definition_id', '')
                 amount = int(troop.get('amount', 0))
                 troop_counts[troop_type] += amount
             
-            # Add troop counts for all known troop types from registry
-            for troop_type in troop_registry.keys():
-                player_data[f'troop_{troop_type}'] = troop_counts.get(troop_type, 0)
+            # Store troops as JSON string instead of individual columns
+            player_data['troops_json'] = json.dumps(dict(troop_counts))
             
             # Process resources
             resources = resources_by_player.get(player_id, [])

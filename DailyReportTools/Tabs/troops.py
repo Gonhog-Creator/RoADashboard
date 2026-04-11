@@ -80,12 +80,37 @@ def create_troops_tab(filtered_df):
                     player_df = latest_data['raw_player_data']
                     
                     # Get all troop columns from player data
-                    troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
+                    if 'troops_json' in player_df.columns:
+                        # Parse troops from JSON format
+                        all_troop_types = set()
+                        for _, player_row in player_df.iterrows():
+                            try:
+                                troops_dict = json.loads(player_row['troops_json'])
+                                all_troop_types.update(troops_dict.keys())
+                            except:
+                                continue
+                        troop_columns = [f'troop_{troop_type}' for troop_type in all_troop_types]
+                    else:
+                        # Fallback to old format (individual troop columns)
+                        troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
                     
                     if troop_columns:
-                        # Convert troop columns to numeric
-                        for col in troop_columns:
-                            player_df[col] = pd.to_numeric(player_df[col], errors='coerce').fillna(0)
+                        # Parse troop counts from JSON if available
+                        if 'troops_json' in player_df.columns:
+                            # Create a dictionary to store troop counts per player
+                            player_troop_counts = {}
+                            for _, player_row in player_df.iterrows():
+                                player_id = player_row['account_id']
+                                try:
+                                    troops_dict = json.loads(player_row['troops_json'])
+                                    player_troop_counts[player_id] = troops_dict
+                                except:
+                                    player_troop_counts[player_id] = {}
+                        else:
+                            # Convert troop columns to numeric for old format
+                            for col in troop_columns:
+                                player_df[col] = pd.to_numeric(player_df[col], errors='coerce').fillna(0)
+                            player_troop_counts = None
                         
                         # Display troop types in a 3-column grid of tiles
                         cols = st.columns(3)
@@ -102,7 +127,24 @@ def create_troops_tab(filtered_df):
                             
                             if total_amount > 0:  # Only show troop types that exist
                                 # Get top 5 players for this troop type
-                                top_players = player_df[player_df[troop_col] > 0].nlargest(5, troop_col)
+                                if player_troop_counts:
+                                    # Use JSON data
+                                    troop_type = troop_col.replace('troop_', '')
+                                    player_troop_list = []
+                                    for player_id, troops_dict in player_troop_counts.items():
+                                        count = troops_dict.get(troop_type, 0)
+                                        if count > 0:
+                                            player_row = player_df[player_df['account_id'] == player_id].iloc[0]
+                                            player_troop_list.append({
+                                                'account_id': player_id,
+                                                'username': player_row.get('username', ''),
+                                                'count': count
+                                            })
+                                    player_troop_list.sort(key=lambda x: x['count'], reverse=True)
+                                    top_players_list = player_troop_list[:5]
+                                else:
+                                    # Use old column format
+                                    top_players_list = player_df[player_df[troop_col] > 0].nlargest(5, troop_col)
                                 
                                 # Create tile content
                                 tile_content = f"""
@@ -111,21 +153,38 @@ def create_troops_tab(filtered_df):
                                     <p style="margin: 0 0 10px 0; font-size: 1.2em; font-weight: bold; color: #1f77b4;">Total: {int(total_amount):,}</p>
                                 """
                                 
-                                if not top_players.empty:
-                                    tile_content += "<p style='margin: 0 0 5px 0; font-weight: bold;'>Top 5 Players:</p><ul style='margin: 0; padding-left: 20px;'>"
-                                    for i, (_, player) in enumerate(top_players.iterrows(), 1):
-                                        # Use username if available, otherwise use account ID
-                                        if 'username' in player and pd.notna(player['username']):
-                                            player_identifier = str(player['username'])
-                                        else:
-                                            account_id = str(player['account_id'])[:8] + "..." if len(str(player['account_id'])) > 8 else str(player['account_id'])
-                                            player_identifier = account_id
-                                        
-                                        troop_count = int(player[troop_col])
-                                        tile_content += f"<li style='margin: 5px 0;'>{i}. {player_identifier}: {troop_count:,}</li>"
-                                    tile_content += "</ul>"
+                                if player_troop_counts:
+                                    # JSON format - top_players_list is a list of dicts
+                                    if top_players_list:
+                                        tile_content += "<p style='margin: 0 0 5px 0; font-weight: bold;'>Top 5 Players:</p><ul style='margin: 0; padding-left: 20px;'>"
+                                        for i, player_data in enumerate(top_players_list, 1):
+                                            if player_data.get('username'):
+                                                player_identifier = str(player_data['username'])
+                                            else:
+                                                account_id = str(player_data['account_id'])[:8] + "..." if len(str(player_data['account_id'])) > 8 else str(player_data['account_id'])
+                                                player_identifier = account_id
+                                            troop_count = int(player_data['count'])
+                                            tile_content += f"<li style='margin: 5px 0;'>{i}. {player_identifier}: {troop_count:,}</li>"
+                                        tile_content += "</ul>"
+                                    else:
+                                        tile_content += "<p style='margin: 0;'>No players have this troop type</p>"
                                 else:
-                                    tile_content += "<p style='margin: 0;'>No players have this troop type</p>"
+                                    # Old format - top_players_list is a DataFrame
+                                    if not top_players_list.empty:
+                                        tile_content += "<p style='margin: 0 0 5px 0; font-weight: bold;'>Top 5 Players:</p><ul style='margin: 0; padding-left: 20px;'>"
+                                        for i, (_, player) in enumerate(top_players_list.iterrows(), 1):
+                                            # Use username if available, otherwise use account ID
+                                            if 'username' in player and pd.notna(player['username']):
+                                                player_identifier = str(player['username'])
+                                            else:
+                                                account_id = str(player['account_id'])[:8] + "..." if len(str(player['account_id'])) > 8 else str(player['account_id'])
+                                                player_identifier = account_id
+                                            
+                                            troop_count = int(player[troop_col])
+                                            tile_content += f"<li style='margin: 5px 0;'>{i}. {player_identifier}: {troop_count:,}</li>"
+                                        tile_content += "</ul>"
+                                    else:
+                                        tile_content += "<p style='margin: 0;'>No players have this troop type</p>"
                                 
                                 tile_content += "</div>"
                                 
@@ -140,7 +199,21 @@ def create_troops_tab(filtered_df):
             # Get all troop types from the latest data
             if 'raw_player_data' in latest_data:
                 player_df = latest_data['raw_player_data']
-                troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
+                
+                # Get troop columns from JSON or old format
+                if 'troops_json' in player_df.columns:
+                    # Parse troops from JSON format
+                    all_troop_types = set()
+                    for _, player_row in player_df.iterrows():
+                        try:
+                            troops_dict = json.loads(player_row['troops_json'])
+                            all_troop_types.update(troops_dict.keys())
+                        except:
+                            continue
+                    troop_columns = [f'troop_{troop_type}' for troop_type in all_troop_types]
+                else:
+                    # Fallback to old format (individual troop columns)
+                    troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
                 
                 if troop_columns:
                     # Create checkboxes for troop selection (like resource tab)
@@ -361,10 +434,6 @@ def create_troops_tab(filtered_df):
         else:
             # Fallback for old format data or no troops data
             st.info("Warning No detailed troop data available. This feature requires the comprehensive CSV format.")
-            
-            # Show basic info if available
-            if 'total_players' in latest_data:
-                st.metric("Players Total Players", f"{latest_data['total_players']:,}")
     
     else:
         st.info("No data available for troop analysis")

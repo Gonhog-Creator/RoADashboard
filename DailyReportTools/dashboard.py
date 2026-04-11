@@ -231,7 +231,7 @@ def parse_comprehensive_csv(file_path):
         # Calculate average power per player
         avg_power_per_player = total_power / total_players if total_players > 0 else 0
         
-        # Aggregate items data
+        # Aggregate items data from individual player rows
         items = {}
         item_columns = [col for col in df.columns if col.startswith('item_')]
         for col in item_columns:
@@ -239,7 +239,7 @@ def parse_comprehensive_csv(file_path):
             total_amount = df[col].fillna(0).sum()
             if total_amount > 0:
                 items[item_name] = total_amount
-        
+
         # Aggregate resources (comprehensive format uses resource_ prefix)
         resources = {}
         resource_columns = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food', 'resource_ruby']
@@ -253,11 +253,24 @@ def parse_comprehensive_csv(file_path):
         # Extract additional data for new tabs
         buildings_data = {}  # Buildings data extraction moved to buildings.py
         
-        # Parse troops data (assuming it's in a column)
+        # Parse troops data from JSON format
         troops_data = {}
-        troops_columns = [col for col in df.columns if 'troop' in col.lower()]
-        for col in troops_columns:
-            troops_data[col] = df[col].fillna(0).sum()
+        if 'troops_json' in df.columns:
+            for _, row in df.iterrows():
+                try:
+                    troops_dict = json.loads(row['troops_json'])
+                    for troop_name, count in troops_dict.items():
+                        troops_data[troop_name] = troops_data.get(troop_name, 0) + count
+                except:
+                    continue
+        else:
+            # Fallback to old format (individual troop columns)
+            troop_columns = [col for col in df.columns if col.startswith('troop_')]
+            for col in troop_columns:
+                troop_name = col
+                total_amount = df[col].fillna(0).sum()
+                if total_amount > 0:
+                    troops_data[troop_name] = total_amount
         
         # Parse skins data
         skins_data = {}

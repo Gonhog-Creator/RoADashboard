@@ -53,11 +53,38 @@ def create_speedups_tab(filtered_df):
             'Testronius Infusion': '99%'
         }
         
-        # Get all item types and find speedup items
+        # Check if we have comprehensive data format (same as items tab)
+        latest_data = filtered_df.iloc[-1]
+        use_comprehensive = 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None
+        
+        # Get all item types and find speedup items (same logic as items tab)
         all_items = set()
-        for items in filtered_df['items']:
-            if isinstance(items, dict):
-                all_items.update(items.keys())
+        
+        if use_comprehensive:
+            # Comprehensive CSV format - extract from raw_player_data (same as items tab)
+            for _, row in filtered_df.iterrows():
+                if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                    player_df = row['raw_player_data']
+                    if isinstance(player_df, pd.DataFrame):
+                        if 'items_json' in player_df.columns:
+                            # Parse items from JSON format
+                            for _, player_row in player_df.iterrows():
+                                try:
+                                    items_dict = json.loads(player_row['items_json'])
+                                    all_items.update(items_dict.keys())
+                                except:
+                                    continue
+                        else:
+                            # Fallback to old format (individual item columns)
+                            item_columns = [col for col in player_df.columns if col.startswith('item_')]
+                            for col in item_columns:
+                                item_name = col.replace('item_', '')
+                                all_items.add(item_name)
+        else:
+            # Legacy format - extract from items dictionary
+            for items in filtered_df['items']:
+                if isinstance(items, dict) and items:
+                    all_items.update(items.keys())
         
         # Find speedup items in the data (in order of time)
         available_speedups = []
@@ -68,6 +95,7 @@ def create_speedups_tab(filtered_df):
                 search_name = item_name.lower()
                 if search_key in search_name or speedup_key.lower() in search_name:
                     available_speedups.append(speedup_key)
+                    break
                     break
         
         if available_speedups:
@@ -118,18 +146,44 @@ def create_speedups_tab(filtered_df):
                     
                     # Overall amount (left column for this speedup) - Line chart
                     values = []
-                    for items in filtered_df['items']:
-                        if isinstance(items, dict):
-                            count = 0
-                            for item_name, amount in items.items():
-                                # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                search_key = speedup_type.lower().replace(' ', '_')
-                                search_name = item_name.lower()
-                                if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                    count += amount
-                            values.append(count)
+                    for _, data_row in filtered_df.iterrows():
+                        count = 0
+                        if use_comprehensive:
+                            # Comprehensive CSV format - extract from raw_player_data
+                            if 'raw_player_data' in data_row and data_row['raw_player_data'] is not None:
+                                player_df = data_row['raw_player_data']
+                                if isinstance(player_df, pd.DataFrame):
+                                    if 'items_json' in player_df.columns:
+                                        # Parse items from JSON format
+                                        for _, player_row in player_df.iterrows():
+                                            try:
+                                                items_dict = json.loads(player_row['items_json'])
+                                                for item_name, amount in items_dict.items():
+                                                    # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                                    search_key = speedup_type.lower().replace(' ', '_')
+                                                    search_name = item_name.lower()
+                                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                        count += amount
+                                            except:
+                                                continue
+                                    else:
+                                        # Fallback to old format (individual item columns)
+                                        for item_name in all_items:
+                                            search_key = speedup_type.lower().replace(' ', '_')
+                                            search_name = item_name.lower()
+                                            if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                item_col = f'item_{item_name}'
+                                                if item_col in player_df.columns:
+                                                    count += player_df[item_col].fillna(0).sum()
                         else:
-                            values.append(0)
+                            # Legacy format - extract from items dictionary
+                            if isinstance(data_row['items'], dict) and data_row['items']:
+                                for item_name, amount in data_row['items'].items():
+                                    search_key = speedup_type.lower().replace(' ', '_')
+                                    search_name = item_name.lower()
+                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                        count += amount
+                        values.append(count)
                     
                     fig_speedups.add_trace(
                         go.Scatter(
@@ -151,17 +205,42 @@ def create_speedups_tab(filtered_df):
                         sorted_values = []
                         sorted_dates = []
                         for _, data_row in sorted_data.iterrows():
-                            if isinstance(data_row['items'], dict):
-                                count = 0
-                                for item_name, amount in data_row['items'].items():
-                                    # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                    search_key = speedup_type.lower().replace(' ', '_')
-                                    search_name = item_name.lower()
-                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                        count += amount
-                                sorted_values.append(count)
+                            count = 0
+                            if use_comprehensive:
+                                # Comprehensive CSV format - extract from raw_player_data
+                                if 'raw_player_data' in data_row and data_row['raw_player_data'] is not None:
+                                    player_df = data_row['raw_player_data']
+                                    if isinstance(player_df, pd.DataFrame):
+                                        if 'items_json' in player_df.columns:
+                                            # Parse items from JSON format
+                                            for _, player_row in player_df.iterrows():
+                                                try:
+                                                    items_dict = json.loads(player_row['items_json'])
+                                                    for item_name, amount in items_dict.items():
+                                                        search_key = speedup_type.lower().replace(' ', '_')
+                                                        search_name = item_name.lower()
+                                                        if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                            count += amount
+                                                except:
+                                                    continue
+                                        else:
+                                            # Fallback to old format (individual item columns)
+                                            for item_name in all_items:
+                                                search_key = speedup_type.lower().replace(' ', '_')
+                                                search_name = item_name.lower()
+                                                if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                    item_col = f'item_{item_name}'
+                                                    if item_col in player_df.columns:
+                                                        count += player_df[item_col].fillna(0).sum()
                             else:
-                                sorted_values.append(0)
+                                # Legacy format - extract from items dictionary
+                                if isinstance(data_row['items'], dict) and data_row['items']:
+                                    for item_name, amount in data_row['items'].items():
+                                        search_key = speedup_type.lower().replace(' ', '_')
+                                        search_name = item_name.lower()
+                                        if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                            count += amount
+                            sorted_values.append(count)
                             sorted_dates.append(data_row['date'])
                         
                         # Calculate true daily rates using time differences

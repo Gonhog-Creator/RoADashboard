@@ -142,13 +142,26 @@ def create_items_tab(df):
             if 'raw_player_data' in row and row['raw_player_data'] is not None:
                 player_df = row['raw_player_data']
                 if isinstance(player_df, pd.DataFrame):
-                    item_columns = [col for col in player_df.columns if col.startswith('item_')]
-                    for col in item_columns:
-                        item_name = col.replace('item_', '')
-                        total_count = player_df[col].fillna(0).sum()
-                        if total_count > 0:
-                            all_items.add(item_name)
-                            items_with_history.add(item_name)
+                    if 'items_json' in player_df.columns:
+                        # Parse items from JSON format
+                        for _, player_row in player_df.iterrows():
+                            try:
+                                items_dict = json.loads(player_row['items_json'])
+                                for item_name, count in items_dict.items():
+                                    if count > 0:
+                                        all_items.add(item_name)
+                                        items_with_history.add(item_name)
+                            except:
+                                continue
+                    else:
+                        # Fallback to old format (individual item columns)
+                        item_columns = [col for col in player_df.columns if col.startswith('item_')]
+                        for col in item_columns:
+                            item_name = col.replace('item_', '')
+                            total_count = player_df[col].fillna(0).sum()
+                            if total_count > 0:
+                                all_items.add(item_name)
+                                items_with_history.add(item_name)
     else:
         # Legacy format - extract from items dictionary
         for _, row in df.iterrows():
@@ -242,14 +255,30 @@ def create_items_tab(df):
                         if 'raw_player_data' in row and row['raw_player_data'] is not None:
                             player_df = row['raw_player_data']
                             if isinstance(player_df, pd.DataFrame):
-                                item_col = f'item_{original_name}'
-                                if item_col in player_df.columns:
-                                    quantity = player_df[item_col].fillna(0).sum()
+                                if 'items_json' in player_df.columns:
+                                    # Parse items from JSON format
+                                    quantity = 0
+                                    for _, player_row in player_df.iterrows():
+                                        try:
+                                            items_dict = json.loads(player_row['items_json'])
+                                            quantity += items_dict.get(original_name, 0)
+                                        except:
+                                            continue
                                     if quantity > 0:
                                         item_data.append({
                                             'date': row['date'],
                                             'quantity': quantity
                                         })
+                                else:
+                                    # Fallback to old format (individual item columns)
+                                    item_col = f'item_{original_name}'
+                                    if item_col in player_df.columns:
+                                        quantity = player_df[item_col].fillna(0).sum()
+                                        if quantity > 0:
+                                            item_data.append({
+                                                'date': row['date'],
+                                                'quantity': quantity
+                                            })
                     else:
                         # Legacy format - extract from items dictionary
                         if 'items' in row and isinstance(row['items'], dict):
@@ -356,11 +385,24 @@ def create_items_tab(df):
                         if 'raw_player_data' in row and row['raw_player_data'] is not None:
                             player_df = row['raw_player_data']
                             if isinstance(player_df, pd.DataFrame):
-                                item_col = f'item_{original_name}'
-                                if item_col in player_df.columns:
-                                    quantity = player_df[item_col].fillna(0).sum()
+                                if 'items_json' in player_df.columns:
+                                    # Parse items from JSON format
+                                    quantity = 0
+                                    for _, player_row in player_df.iterrows():
+                                        try:
+                                            items_dict = json.loads(player_row['items_json'])
+                                            quantity += items_dict.get(original_name, 0)
+                                        except:
+                                            continue
                                     if quantity > 0:
                                         item_data.append(quantity)
+                                else:
+                                    # Fallback to old format (individual item columns)
+                                    item_col = f'item_{original_name}'
+                                    if item_col in player_df.columns:
+                                        quantity = player_df[item_col].fillna(0).sum()
+                                        if quantity > 0:
+                                            item_data.append(quantity)
                     else:
                         # Legacy format - extract from items dictionary
                         if 'items' in row and isinstance(row['items'], dict):
