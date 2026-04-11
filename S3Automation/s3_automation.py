@@ -96,8 +96,18 @@ class S3Automation:
     
     def push_to_github(self, csv_file):
         """Push the CSV file to GitHub repository"""
+        print(f"\n=== GitHub Push Debug Info ===")
+        print(f"GitHub token configured: {bool(self.github_token)}")
+        print(f"GitHub owner: {self.github_owner}")
+        print(f"GitHub repo: {self.github_repo}")
+        print(f"CSV file: {csv_file}")
+        
         if not self.github_token or not self.github_owner or not self.github_repo:
-            print("GitHub credentials not configured. Skipping GitHub push.")
+            print("ERROR: GitHub credentials not configured. Skipping GitHub push.")
+            return False
+        
+        if not os.path.exists(csv_file):
+            print(f"ERROR: CSV file does not exist: {csv_file}")
             return False
         
         try:
@@ -107,11 +117,15 @@ class S3Automation:
             with open(csv_file, 'r') as f:
                 csv_content = f.read()
             
+            print(f"CSV file size: {len(csv_content)} bytes")
+            
             # Generate filename
             csv_filename = os.path.basename(csv_file)
+            print(f"Target filename: {csv_filename}")
             
             # GitHub API URL
             api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{csv_filename}"
+            print(f"GitHub API URL: {api_url}")
             
             # Check if file already exists
             headers = {
@@ -119,12 +133,15 @@ class S3Automation:
                 'Content-Type': 'application/json'
             }
             
+            print("Checking if file exists in repository...")
             response = requests.get(api_url, headers=headers)
+            print(f"GET response status: {response.status_code}")
             
             if response.status_code == 200:
                 # File exists, update it
                 existing_data = response.json()
                 github_sha = existing_data['sha']
+                print(f"File exists with SHA: {github_sha}")
                 data = {
                     'message': f'Update {csv_filename} - {datetime.now().isoformat()}',
                     'content': csv_content,
@@ -134,6 +151,7 @@ class S3Automation:
                 response = requests.put(api_url, json=data, headers=headers)
             else:
                 # File doesn't exist, create it
+                print(f"File does not exist (status {response.status_code}), creating new file")
                 data = {
                     'message': f'Add {csv_filename} - {datetime.now().isoformat()}',
                     'content': csv_content,
@@ -141,14 +159,19 @@ class S3Automation:
                 }
                 response = requests.put(api_url, json=data, headers=headers)
             
+            print(f"PUT response status: {response.status_code}")
+            print(f"PUT response body: {response.text[:500]}")
+            
             if response.status_code in [200, 201]:
-                print(f"Successfully pushed {csv_filename} to GitHub")
+                print(f"✓ Successfully pushed {csv_filename} to GitHub")
                 return True
             else:
-                print(f"Error pushing to GitHub: {response.status_code} - {response.text}")
+                print(f"✗ Error pushing to GitHub: {response.status_code} - {response.text}")
                 return False
         except Exception as e:
-            print(f"Error pushing to GitHub: {e}")
+            print(f"✗ Error pushing to GitHub: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def cleanup(self):
