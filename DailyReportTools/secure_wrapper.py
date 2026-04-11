@@ -32,7 +32,7 @@ try:
         CSV_REPO_URL = ADMIN_USERS["csv_repo_url"]
     
 except Exception as e:
-    st.error(f"❌ Please configure secrets in Streamlit Community Cloud settings!")
+    st.error(f"Please configure secrets in Streamlit Community Cloud settings!")
     st.stop()
 
 def generate_token(username):
@@ -73,7 +73,7 @@ def check_authentication():
 
 def login_page():
     """Display login page"""
-    st.title("🔐 Realm Analytics - Login")
+    st.title("Realm Analytics - Login")
     
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
@@ -124,10 +124,10 @@ def show_logout_button():
             logout()
 
 def load_csv_from_github():
-    """Load CSV files from private GitHub repository"""
+    """Load CSV files from private GitHub repository and save them as individual files"""
     if not GITHUB_TOKEN or not CSV_REPO_URL:
-        st.sidebar.warning("⚠️ GitHub token or repository URL not configured")
-        return None
+        st.sidebar.warning("GitHub token or repository URL not configured")
+        return False
     
     try:
         # Extract owner and repo from URL
@@ -144,8 +144,8 @@ def load_csv_from_github():
         # Extract owner and repo name
         url_parts = repo_base.replace("https://github.com/", "").split("/")
         if len(url_parts) < 2:
-            st.sidebar.error("❌ Invalid repository URL format")
-            return None
+            st.sidebar.error("Invalid repository URL format")
+            return False
         
         owner, repo = url_parts[0], url_parts[1]
         
@@ -158,12 +158,9 @@ def load_csv_from_github():
             "User-Agent": "Streamlit-Dashboard"
         }
         
-        st.sidebar.write(f"🔍 Checking repository: {owner}/{repo}")
+        st.sidebar.write(f"Checking repository: {owner}/{repo}")
         
         response = requests.get(api_url, headers=headers)
-        
-        # Debug: Show response status and content type
-        st.sidebar.write(f"📡 API Response: {response.status_code}")
         
         if response.status_code == 200:
             try:
@@ -171,64 +168,69 @@ def load_csv_from_github():
                 
                 # Check if we got a valid JSON response
                 if isinstance(files, str):
-                    st.sidebar.error(f"❌ API returned string instead of JSON: {files[:100]}...")
-                    return None
+                    st.sidebar.error(f"API returned string instead of JSON: {files[:100]}...")
+                    return False
                 
                 if not isinstance(files, list):
-                    st.sidebar.error(f"❌ Unexpected API response format")
-                    return None
+                    st.sidebar.error(f"Unexpected API response format")
+                    return False
                 
                 csv_files = [f for f in files if f.get('name', '').endswith('.csv')]
                 
-                st.sidebar.write(f"📁 Found {len(csv_files)} CSV files")
+                st.sidebar.write(f"Found {len(csv_files)} CSV files")
                 
                 if not csv_files:
-                    st.sidebar.warning("⚠️ No CSV files found in remote repository")
-                    return None
+                    st.sidebar.warning("No CSV files found in remote repository")
+                    return False
                 
-                all_data = []
+                # Ensure Daily Reports directory exists
+                os.makedirs("Daily Reports", exist_ok=True)
+                
+                downloaded_count = 0
                 for file_info in csv_files:
                     try:
-                        # Download each CSV file
+                        # Download each CSV file directly
                         download_url = file_info.get('download_url')
                         if not download_url:
-                            st.sidebar.error(f"❌ No download URL for {file_info.get('name', 'unknown')}")
+                            st.sidebar.error(f"No download URL for {file_info.get('name', 'unknown')}")
                             continue
                         
                         csv_response = requests.get(download_url, headers=headers)
                         
                         if csv_response.status_code == 200:
-                            csv_data = csv_response.text
-                            df = pd.read_csv(StringIO(csv_data))
-                            if not df.empty:
-                                # Add filename info
-                                df['source_file'] = file_info['name']
-                                all_data.append(df)
-                                # Removed sidebar message to reduce clutter
-                            else:
-                                st.sidebar.warning(f"⚠️ Empty file: {file_info['name']}")
+                            # Save file directly with original name and content
+                            filename = file_info['name']
+                            file_path = f"Daily Reports/{filename}"
+                            
+                            with open(file_path, 'w', encoding='utf-8') as f:
+                                f.write(csv_response.text)
+                            
+                            downloaded_count += 1
+                            st.sidebar.success(f"Downloaded {filename}")
                         else:
-                            st.sidebar.error(f"❌ Failed to download {file_info['name']}: {csv_response.status_code}")
+                            st.sidebar.error(f"Failed to download {file_info['name']}: {csv_response.status_code}")
                     except Exception as e:
-                        st.sidebar.error(f"❌ Error processing {file_info.get('name', 'unknown')}: {e}")
+                        st.sidebar.error(f"Error processing {file_info.get('name', 'unknown')}: {e}")
                 
-                if all_data:
-                    return pd.concat(all_data, ignore_index=True)
+                if downloaded_count > 0:
+                    st.sidebar.success(f"Successfully downloaded {downloaded_count} CSV files")
+                    return True
                 else:
-                    return None
+                    st.sidebar.error("No files were successfully downloaded")
+                    return False
                     
             except ValueError as e:
-                st.sidebar.error(f"❌ Failed to parse JSON response: {e}")
+                st.sidebar.error(f"Failed to parse JSON response: {e}")
                 st.sidebar.write(f"Raw response: {response.text[:200]}...")
-                return None
+                return False
         else:
-            st.sidebar.error(f"❌ GitHub API error: {response.status_code}")
+            st.sidebar.error(f"GitHub API error: {response.status_code}")
             st.sidebar.write(f"Response: {response.text[:200]}...")
-            return None
+            return False
             
     except Exception as e:
-        st.sidebar.error(f"❌ Error loading remote CSV files: {e}")
-        return None
+        st.sidebar.error(f"Error loading remote CSV files: {e}")
+        return False
 
 def load_csv_files():
     """Smart loading: Try local first, fallback to remote if empty"""
@@ -238,45 +240,22 @@ def load_csv_files():
     csv_files = glob.glob("Daily Reports/*.csv")
     
     if csv_files:
-        st.sidebar.success("💾 Using local CSV files")
+        st.sidebar.success("Using local CSV files")
         return None
     
     # Fallback to remote if local is empty
     if GITHUB_TOKEN and CSV_REPO_URL:
-        st.sidebar.info("📡 Local files empty, loading from remote repository...")
-        remote_df = load_csv_from_github()
+        st.sidebar.info("Local files empty, loading from remote repository...")
+        success = load_csv_from_github()
         
-        if remote_df is not None and not remote_df.empty:
-            st.sidebar.success("✅ Using remote CSV files")
-            
-            # Save individual CSV files so the original dashboard can read them
-            try:
-                os.makedirs("Daily Reports", exist_ok=True)
-                
-                # Group by source_file and save each separately
-                if 'source_file' in remote_df.columns:
-                    for filename in remote_df['source_file'].unique():
-                        file_df = remote_df[remote_df['source_file'] == filename].drop('source_file', axis=1)
-                        file_path = f"Daily Reports/{filename}"
-                        file_df.to_csv(file_path, index=False)
-                        st.sidebar.success(f"💾 Saved {filename}")
-                else:
-                    # If no source_file column, save as a single file with expected naming
-                    filename = f"realm_analytics_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.csv"
-                    file_path = f"Daily Reports/{filename}"
-                    remote_df.to_csv(file_path, index=False)
-                    st.sidebar.success(f"💾 Saved {filename}")
-                
-                return None  # Let the original dashboard handle the loading
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ Error saving remote files: {e}")
-                return remote_df
+        if success:
+            st.sidebar.success("Using remote CSV files")
+            return None  # Let the original dashboard handle the loading
         else:
-            st.sidebar.error("❌ Remote files also empty")
+            st.sidebar.error("Remote files also empty")
     
     # No data available
-    st.sidebar.error("❌ No CSV files available locally or remotely")
+    st.sidebar.error("No CSV files available locally or remotely")
     return None
 
 @require_auth
@@ -304,10 +283,10 @@ def main():
         exec(dashboard_code, globals())
         
     except FileNotFoundError:
-        st.error(f"❌ Dashboard file not found at: {dashboard_path}")
+        st.error(f"Dashboard file not found at: {dashboard_path}")
         st.info("Please ensure dashboard.py is in the DailyReportTools directory")
     except Exception as e:
-        st.error(f"❌ Error loading dashboard: {e}")
+        st.error(f"Error loading dashboard: {e}")
         st.info("Please check the dashboard.py file for any syntax errors")
 
 if __name__ == "__main__":
