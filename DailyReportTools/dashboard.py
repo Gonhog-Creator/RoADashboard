@@ -142,6 +142,10 @@ def process_player_creation_dates(filtered_df):
         closest_date = player_timeline.iloc[closest_date_idx]
         updated_df.at[idx, 'total_players'] = closest_date['total_players']
     
+    # Ensure raw_player_data column is preserved (copy() might not preserve complex objects properly)
+    if 'raw_player_data' in filtered_df.columns:
+        updated_df['raw_player_data'] = filtered_df['raw_player_data'].copy()
+    
     return updated_df
 
 def save_parsed_cache(cache):
@@ -233,12 +237,23 @@ def parse_comprehensive_csv(file_path):
         
         # Aggregate items data from individual player rows
         items = {}
-        item_columns = [col for col in df.columns if col.startswith('item_')]
-        for col in item_columns:
-            item_name = col.replace('item_', '')
-            total_amount = df[col].fillna(0).sum()
-            if total_amount > 0:
-                items[item_name] = total_amount
+        # Try items_json format first (new comprehensive format)
+        if 'items_json' in df.columns:
+            for _, row in df.iterrows():
+                try:
+                    items_dict = json.loads(row['items_json'])
+                    for item_name, count in items_dict.items():
+                        items[item_name] = items.get(item_name, 0) + count
+                except:
+                    continue
+        else:
+            # Fallback to old format (individual item columns)
+            item_columns = [col for col in df.columns if col.startswith('item_')]
+            for col in item_columns:
+                item_name = col.replace('item_', '')
+                total_amount = df[col].fillna(0).sum()
+                if total_amount > 0:
+                    items[item_name] = total_amount
 
         # Aggregate resources (comprehensive format uses resource_ prefix)
         resources = {}
@@ -315,6 +330,7 @@ def parse_comprehensive_csv(file_path):
             'date': date,
             'filename': filename,
             'total_players': total_players,
+            'total_power': total_power,
             'avg_power_per_player': avg_power_per_player,
             'resources': resources,
             'items': items,

@@ -313,13 +313,15 @@ def create_overview_tab(filtered_df):
                 sorted_df = filtered_df.sort_values('date')
                 latest_data = sorted_df.iloc[-1]
                 
-                # Extract power data from realm summary
-                total_power = latest_data.get('total_power', 0)
-                avg_power_per_player = latest_data.get('avg_power_per_player', 0)
-                latest_players = latest_data['total_players']
+                # Extract power data from realm summary (handle missing power data)
+                total_power = latest_data.get('total_power', 0) if 'total_power' in latest_data else 0
+                avg_power_per_player = latest_data.get('avg_power_per_player', 0) if 'avg_power_per_player' in latest_data else 0
+                latest_players = latest_data.get('total_players', 0)
                 
-                # Calculate power growth rates
-                if len(sorted_df) >= 2:
+                # Calculate power growth rates (only if total_power column exists)
+                daily_power_change = 0
+                daily_avg_power_change = 0
+                if len(sorted_df) >= 2 and 'total_power' in sorted_df.columns:
                     daily_power_rates = calculate_daily_rate(sorted_df, 'total_power')
                     
                     # Get the most recent meaningful (non-zero) change
@@ -327,16 +329,14 @@ def create_overview_tab(filtered_df):
                     meaningful_changes = meaningful_changes[meaningful_changes != 0]
                     daily_power_change = meaningful_changes.iloc[-1] if len(meaningful_changes) > 0 else 0
                     
-                    # Calculate per player power growth
-                    daily_avg_power_rates = calculate_daily_rate(sorted_df, 'avg_power_per_player')
-                    
-                    # Get the most recent meaningful (non-zero) change for per player power
-                    avg_meaningful_changes = daily_avg_power_rates.dropna()
-                    avg_meaningful_changes = avg_meaningful_changes[avg_meaningful_changes != 0]
-                    daily_avg_power_change = avg_meaningful_changes.iloc[-1] if len(avg_meaningful_changes) > 0 else 0
-                else:
-                    daily_power_change = 0
-                    daily_avg_power_change = 0
+                    # Calculate per player power growth (only if avg_power_per_player column exists)
+                    if 'avg_power_per_player' in sorted_df.columns:
+                        daily_avg_power_rates = calculate_daily_rate(sorted_df, 'avg_power_per_player')
+                        
+                        # Get the most recent meaningful (non-zero) change for per player power
+                        avg_meaningful_changes = daily_avg_power_rates.dropna()
+                        avg_meaningful_changes = avg_meaningful_changes[avg_meaningful_changes != 0]
+                        daily_avg_power_change = avg_meaningful_changes.iloc[-1] if len(avg_meaningful_changes) > 0 else 0
                 
                 # Display power metrics
                 power_col1, power_col2 = st.columns(2)

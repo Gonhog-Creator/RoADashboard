@@ -45,24 +45,24 @@ def create_power_tab(filtered_df):
         
         # Get latest power data
         latest_data = sorted_df.iloc[-1]
-        total_power = latest_data.get('total_power', 0)
-        avg_power_per_player = latest_data.get('avg_power_per_player', 0)
-        latest_players = latest_data['total_players']
+        total_power = latest_data.get('total_power', 0) if 'total_power' in latest_data else 0
+        avg_power_per_player = latest_data.get('avg_power_per_player', 0) if 'avg_power_per_player' in latest_data else 0
+        latest_players = latest_data.get('total_players', 0)
         
-        # Calculate growth rates
-        if len(sorted_df) >= 2:
+        # Calculate growth rates (only if columns exist)
+        daily_power_change = 0
+        daily_avg_power_change = 0
+        if len(sorted_df) >= 2 and 'total_power' in sorted_df.columns:
             daily_power_rates = calculate_daily_rate(sorted_df, 'total_power')
             meaningful_changes = daily_power_rates.dropna()
             meaningful_changes = meaningful_changes[meaningful_changes != 0]
             daily_power_change = meaningful_changes.iloc[-1] if len(meaningful_changes) > 0 else 0
             
-            daily_avg_power_rates = calculate_daily_rate(sorted_df, 'avg_power_per_player')
-            avg_meaningful_changes = daily_avg_power_rates.dropna()
-            avg_meaningful_changes = avg_meaningful_changes[avg_meaningful_changes != 0]
-            daily_avg_power_change = avg_meaningful_changes.iloc[-1] if len(avg_meaningful_changes) > 0 else 0
-        else:
-            daily_power_change = 0
-            daily_avg_power_change = 0
+            if 'avg_power_per_player' in sorted_df.columns:
+                daily_avg_power_rates = calculate_daily_rate(sorted_df, 'avg_power_per_player')
+                avg_meaningful_changes = daily_avg_power_rates.dropna()
+                avg_meaningful_changes = avg_meaningful_changes[avg_meaningful_changes != 0]
+                daily_avg_power_change = avg_meaningful_changes.iloc[-1] if len(avg_meaningful_changes) > 0 else 0
         
         # Format numbers function
         def format_number(num, show_full=False):
@@ -224,10 +224,10 @@ def create_power_tab(filtered_df):
                                 account_id = str(player['account_id'])[:8] + "..." if len(str(player['account_id'])) > 8 else str(player['account_id'])
                                 player_name = account_id
                             
-                            power = int(player['power'])
+                            power = int(player['power']) if 'power' in player and pd.notna(player['power']) else 0
                             alliance = player.get('alliance_name', 'None')
                             
-                            # Show power percentage of total
+                            # Show power percentage of total (only if total_power > 0)
                             power_percentage = (power / total_power * 100) if total_power > 0 else 0
                             
                             with cols[col]:
@@ -258,34 +258,38 @@ def create_power_tab(filtered_df):
             ]
         )
         
-        # 1. Total Power Over Time (Line Chart)
-        fig_power.add_trace(
-            go.Scatter(
-                x=sorted_df['date'],
-                y=sorted_df['total_power'],
-                mode='lines+markers',
-                name='Total Power',
-                line=dict(color='#FF6B6B', width=3),
-                marker=dict(size=6),
-                hovertemplate='<b>Total Power</b><br>Date: %{x}<br>Power: %{y:,.0f}<extra></extra>'
-            ),
-            row=1, col=1
-        )
+        # 1. Total Power Over Time (Line Chart) - only if total_power column exists
+        if 'total_power' in sorted_df.columns:
+            fig_power.add_trace(
+                go.Scatter(
+                    x=sorted_df['date'],
+                    y=sorted_df['total_power'],
+                    mode='lines+markers',
+                    name='Total Power',
+                    line=dict(color='#FF6B6B', width=3),
+                    marker=dict(size=6),
+                    hovertemplate='<b>Total Power</b><br>Date: %{x}<br>Power: %{y:,.0f}<extra></extra>'
+                ),
+                row=1, col=1
+            )
         
-        # 2. Power Changes (Line Chart)
+        # 2. Power Changes (Line Chart) - only if total_power column exists
         actual_changes = []
-        for i in range(len(sorted_df)):
-            if i == 0:
-                actual_changes.append(0)
-            else:
-                current_power = sorted_df.iloc[i]['total_power']
-                previous_power = sorted_df.iloc[i-1]['total_power']
-                
-                if pd.isna(current_power) or pd.isna(previous_power):
+        if 'total_power' in sorted_df.columns:
+            for i in range(len(sorted_df)):
+                if i == 0:
                     actual_changes.append(0)
                 else:
-                    change = current_power - previous_power
-                    actual_changes.append(change)
+                    current_power = sorted_df.iloc[i]['total_power']
+                    previous_power = sorted_df.iloc[i-1]['total_power']
+                    
+                    if pd.isna(current_power) or pd.isna(previous_power):
+                        actual_changes.append(0)
+                    else:
+                        change = current_power - previous_power
+                        actual_changes.append(change)
+        else:
+            actual_changes = [0] * len(sorted_df)
         
         fig_power.add_trace(
             go.Scatter(
@@ -381,42 +385,54 @@ def create_power_tab(filtered_df):
         # Data Table
         st.markdown("---")
         with st.expander("Power Data Table"):
-            # Create power-focused dataframe
-            power_df = sorted_df[['date', 'total_power', 'avg_power_per_player', 'total_players']].copy()
+            # Create power-focused dataframe - only include power columns if they exist
+            columns_to_include = ['date', 'total_players']
+            if 'total_power' in sorted_df.columns:
+                columns_to_include.extend(['total_power', 'avg_power_per_player'])
             
-            # Calculate daily changes
+            power_df = sorted_df[columns_to_include].copy()
+            
+            # Calculate daily changes - only if total_power column exists
             daily_changes = []
-            for i in range(len(sorted_df)):
-                if i == 0:
-                    daily_changes.append(0)
-                else:
-                    current_power = sorted_df.iloc[i]['total_power']
-                    previous_power = sorted_df.iloc[i-1]['total_power']
-                    
-                    if pd.isna(current_power) or pd.isna(previous_power):
+            if 'total_power' in sorted_df.columns:
+                for i in range(len(sorted_df)):
+                    if i == 0:
                         daily_changes.append(0)
-                        continue
-                    
-                    if current_power != previous_power:
-                        change = current_power - previous_power
-                        daily_changes.append(change)
                     else:
-                        daily_changes.append(0)
-            
-            power_df['daily_change'] = daily_changes
+                        current_power = sorted_df.iloc[i]['total_power']
+                        previous_power = sorted_df.iloc[i-1]['total_power']
+                        
+                        if pd.isna(current_power) or pd.isna(previous_power):
+                            daily_changes.append(0)
+                            continue
+                        
+                        if current_power != previous_power:
+                            change = current_power - previous_power
+                            daily_changes.append(change)
+                        else:
+                            daily_changes.append(0)
+                power_df['daily_change'] = daily_changes
             
             # Format columns
-            if not show_full_numbers:
-                power_df['total_power'] = power_df['total_power'].apply(format_number, args=(False,))
-                power_df['avg_power_per_player'] = power_df['avg_power_per_player'].apply(format_number, args=(False,))
-                power_df['daily_change'] = power_df['daily_change'].apply(lambda x: format_number(x, False) if pd.notna(x) else "0")
-            else:
-                power_df['total_power'] = power_df['total_power'].apply(lambda x: f"{int(x):,}")
-                power_df['avg_power_per_player'] = power_df['avg_power_per_player'].apply(lambda x: f"{int(x):,}")
-                power_df['daily_change'] = power_df['daily_change'].apply(lambda x: f"{int(x):+,}" if pd.notna(x) else "0")
+            if 'total_power' in power_df.columns:
+                if not show_full_numbers:
+                    power_df['total_power'] = power_df['total_power'].apply(format_number, args=(False,))
+                    if 'avg_power_per_player' in power_df.columns:
+                        power_df['avg_power_per_player'] = power_df['avg_power_per_player'].apply(format_number, args=(False,))
+                    power_df['daily_change'] = power_df['daily_change'].apply(lambda x: format_number(x, False) if pd.notna(x) else "0")
+                else:
+                    power_df['total_power'] = power_df['total_power'].apply(lambda x: f"{int(x):,}")
+                    if 'avg_power_per_player' in power_df.columns:
+                        power_df['avg_power_per_player'] = power_df['avg_power_per_player'].apply(lambda x: f"{int(x):,}")
+                    power_df['daily_change'] = power_df['daily_change'].apply(lambda x: f"{int(x):+,}" if pd.notna(x) else "0")
             
             power_df['total_players'] = power_df['total_players'].apply(lambda x: f"{int(x):,}")
-            power_df.columns = ['Date', 'Total Power', 'Power per Player', 'Total Players', 'Change']
+            
+            # Set column names based on what columns are available
+            if 'total_power' in power_df.columns:
+                power_df.columns = ['Date', 'Total Power', 'Power per Player', 'Total Players', 'Change']
+            else:
+                power_df.columns = ['Date', 'Total Players']
             
             st.dataframe(power_df, width='stretch')
     
