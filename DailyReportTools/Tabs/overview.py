@@ -679,12 +679,11 @@ def create_overview_tab(filtered_df):
                             avg_per_player = latest_amount / latest_players if latest_players > 0 else 0
                             
                             # Read image and convert to base64
-                            import base64
                             image_file = speedup_image_map.get(speedup_type, 'Bolt.webp')
                             image_path = f"Images/{image_file}"
                             try:
-                                with open(image_path, "rb") as image_file:
-                                    encoded_image = base64.b64encode(image_file.read()).decode()
+                                with open(image_path, "rb") as img_file:
+                                    encoded_image = base64.b64encode(img_file.read()).decode()
                                     image_html = f'<img src="data:image/webp;base64,{encoded_image}" width="50" style="border-radius: 4px;">'
                             except:
                                 image_html = ""
