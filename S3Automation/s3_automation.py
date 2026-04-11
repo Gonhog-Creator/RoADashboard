@@ -179,6 +179,35 @@ class S3Automation:
             traceback.print_exc()
             return False
     
+    def get_existing_github_files(self):
+        """Get list of existing CSV files in the GitHub repository"""
+        if not self.github_token or not self.github_owner or not self.github_repo:
+            print("GitHub credentials not configured. Cannot check existing files.")
+            return set()
+        
+        try:
+            import requests
+            
+            api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.get(api_url, headers=headers)
+            
+            if response.status_code == 200:
+                files = response.json()
+                existing_files = {f['name'] for f in files if f['name'].endswith('.csv')}
+                print(f"Found {len(existing_files)} existing CSV files in repository")
+                return existing_files
+            else:
+                print(f"Error getting repository files: {response.status_code} - {response.text}")
+                return set()
+        except Exception as e:
+            print(f"Error getting existing files from GitHub: {e}")
+            return set()
+    
     def cleanup(self):
         """Clean up temporary files"""
         if os.path.exists(self.temp_dir):
@@ -198,26 +227,60 @@ class S3Automation:
             tar_files = [f for f in files if f['key'].endswith('.tar.gz')]
             print(f"Found {len(tar_files)} tar.gz files")
             
-            # Process the most recent file (for now)
+            # Get existing files from GitHub
+            existing_files = self.get_existing_github_files()
+            
+            # Process all tar.gz files
             if tar_files:
-                # Sort by last modified, get the most recent
-                tar_files.sort(key=lambda x: x['last_modified'], reverse=True)
-                latest_file = tar_files[0]
+                # Sort by last modified (oldest first for chronological processing)
+                tar_files.sort(key=lambda x: x['last_modified'])
                 
-                print(f"Processing most recent file: {latest_file['key']}")
+                processed_count = 0
+                skipped_count = 0
                 
-                # Download the file
-                tar_path = os.path.join(self.temp_dir, os.path.basename(latest_file['key']))
-                if self.download_file(latest_file['key'], tar_path):
-                    # Process the file
-                    csv_file = self.process_tar_file(tar_path)
-                    if csv_file:
-                        # Push to GitHub
-                        self.push_to_github(csv_file)
+                for tar_file in tar_files:
+                    # Convert tar.gz filename to expected CSV filename
+                    tar_filename = os.path.basename(tar_file['key'])
+                    # Extract timestamp from tar filename: backup_2026-04-11_15-19-05_csv.tar.gz
+                    # to CSV filename: comprehensive_player_data_2026-04-11_151905.csv
+                    if 'backup_' in tar_filename:
+                        # Extract date and time parts
+                        parts = tar_filename.replace('backup_', '').replace('_csv.tar.gz', '').split('_')
+                        if len(parts) >= 2:
+                            date_part = parts[0]  # 2026-04-11
+                            time_part = parts[1].replace('-', '')  # 15-19-05 -> 151905
+                            expected_csv = f"comprehensive_player_data_{date_part}_{time_part}.csv"
+                            
+                            # Check if this file already exists in repository
+                            if expected_csv in existing_files:
+                                print(f"Skipping {tar_filename} - {expected_csv} already exists in repository")
+                                skipped_count += 1
+                                continue
+                    
+                    print(f"Processing file: {tar_file['key']}")
+                    
+                    # Download the file
+                    tar_path = os.path.join(self.temp_dir, os.path.basename(tar_file['key']))
+                    if self.download_file(tar_file['key'], tar_path):
+                        # Process the file
+                        csv_file = self.process_tar_file(tar_path)
+                        if csv_file:
+                            # Push to GitHub
+                            if self.push_to_github(csv_file):
+                                processed_count += 1
+                                # Add to existing files to avoid duplicate processing in same run
+                                csv_filename = os.path.basename(csv_file)
+                                existing_files.add(csv_filename)
+                            else:
+                                print(f"Failed to push {csv_file} to GitHub")
+                        else:
+                            print("Failed to process tar file")
                     else:
-                        print("Failed to process tar file")
-                else:
-                    print("Failed to download file")
+                        print("Failed to download file")
+                
+                print(f"\nProcessing summary:")
+                print(f"Processed: {processed_count} files")
+                print(f"Skipped (already exist): {skipped_count} files")
             else:
                 print("No tar.gz files found in S3 bucket")
             
