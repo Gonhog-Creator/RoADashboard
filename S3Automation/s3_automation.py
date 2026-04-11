@@ -112,12 +112,17 @@ class S3Automation:
         
         try:
             import requests
+            import base64
             
             # Read CSV file
             with open(csv_file, 'r') as f:
                 csv_content = f.read()
             
             print(f"CSV file size: {len(csv_content)} bytes")
+            
+            # Base64 encode the content
+            csv_content_b64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
+            print(f"Base64 encoded size: {len(csv_content_b64)} bytes")
             
             # Generate filename
             csv_filename = os.path.basename(csv_file)
@@ -144,7 +149,7 @@ class S3Automation:
                 print(f"File exists with SHA: {github_sha}")
                 data = {
                     'message': f'Update {csv_filename} - {datetime.now().isoformat()}',
-                    'content': csv_content,
+                    'content': csv_content_b64,
                     'sha': github_sha,
                     'branch': 'main'
                 }
@@ -154,7 +159,7 @@ class S3Automation:
                 print(f"File does not exist (status {response.status_code}), creating new file")
                 data = {
                     'message': f'Add {csv_filename} - {datetime.now().isoformat()}',
-                    'content': csv_content,
+                    'content': csv_content_b64,
                     'branch': 'main'
                 }
                 response = requests.put(api_url, json=data, headers=headers)
