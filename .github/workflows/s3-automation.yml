@@ -13,8 +13,6 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-      with:
-        path: YamlFileParser
     
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -23,7 +21,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        cd YamlFileParser/S3Automation
+        cd S3Automation
         pip install -r requirements.txt
     
     - name: Run S3 automation
@@ -37,5 +35,5 @@ jobs:
         GITHUB_OWNER: ${{ github.repository_owner }}
         GITHUB_REPO: roarealmdata
       run: |
-        cd YamlFileParser/S3Automation
+        cd S3Automation
         python s3_automation.py
