@@ -32,8 +32,8 @@ def get_latest_commit_version():
         if result.returncode == 0:
             commit_message = result.stdout.strip()
             
-            # Try to extract version number pattern (e.g., 2.4.4)
-            version_match = re.search(r'(\d+\.\d+\.\d+)', commit_message)
+            # Try to extract version number pattern (e.g., 2.5 or 2.4.4)
+            version_match = re.search(r'(\d+\.\d+(?:\.\d+)?)', commit_message)
             if version_match:
                 return version_match.group(1)
         
@@ -66,7 +66,7 @@ def get_commit_history():
                 if '===COMMIT_END===' in commit:
                     # Remove the end marker
                     message = commit.replace('===COMMIT_END===', '').strip()
-                    version_match = re.search(r'(\d+\.\d+\.\d+)', message)
+                    version_match = re.search(r'(\d+\.\d+(?:\.\d+)?)', message)
                     if version_match:
                         version = version_match.group(1)
                         version_commits.append({
