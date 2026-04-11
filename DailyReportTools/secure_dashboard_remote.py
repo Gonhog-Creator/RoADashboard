@@ -253,6 +253,13 @@ def main():
         for file in df['source_file'].unique():
             st.sidebar.write(f"• {file}")
     
+    # Add sync button
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Sync from GitHub"):
+        st.cache_data.clear()
+        st.success("Syncing from GitHub...")
+        st.rerun()
+    
     # Simple dashboard
     if not df.empty:
         st.subheader("📈 Total Players Over Time")
