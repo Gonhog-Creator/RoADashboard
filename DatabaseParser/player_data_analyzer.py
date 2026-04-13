@@ -131,12 +131,34 @@ class PlayerDataAnalyzer:
     
     def cleanup_extracted_files(self):
         """Clean up extracted CSV files"""
+        # Clean up the extracted_data subdirectory
         if os.path.exists(self.extract_path):
             try:
                 shutil.rmtree(self.extract_path)
                 print(f"Cleaned up extracted files from {self.extract_path}")
             except Exception as e:
                 print(f"Error cleaning up extracted files: {e}")
+        
+        # Also clean up any CSV files that might have been extracted to the database path
+        # (excluding the comprehensive output files and registry files)
+        csv_files_to_remove = [
+            'player.csv', 'item.csv', 'troop.csv', 'resource.csv', 'building.csv',
+            'settlement.csv', 'equipped_skin.csv', 'unlocked_skin.csv', 'research.csv',
+            'quest.csv', 'alliance_member.csv', 'alliance.csv', 'user.csv', 'effect.csv',
+            'action.csv', 'battle.csv', 'chat_message.csv', 'challenge.csv',
+            'doctrine_migration_versions.csv', 'notification.csv', 'power_history.csv',
+            'reinforcement.csv', 'shop_item.csv', 'shop_item_purchase.csv',
+            'store_purchase.csv', 'player_pity.csv', 'realm.csv'
+        ]
+        
+        for csv_file in csv_files_to_remove:
+            file_path = os.path.join(self.database_path, csv_file)
+            if os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"Removed {csv_file}")
+                except Exception as e:
+                    print(f"Error removing {csv_file}: {e}")
     
     def parse_metadata_premium(self, metadata_str):
         """Parse metadata to extract premium status"""
@@ -314,11 +336,25 @@ class PlayerDataAnalyzer:
             # Process buildings and create metadata
             player_buildings = []
             settlements = settlements_by_player.get(player_id, [])
+            
+            # Track coordinates for primary city and all settlements
+            primary_city_coords = None
+            all_settlement_coords = []
+            
             for settlement in settlements:
                 settlement_id = settlement.get('uuid', '')
                 settlement_name = settlement.get('name', '')
                 settlement_level = settlement.get('level', '')
                 settlement_type = settlement.get('type', '')  # 'city' or 'outpost'
+                coordinate_x = settlement.get('coordinate_x', '')
+                coordinate_y = settlement.get('coordinate_y', '')
+                
+                # Store coordinates for this settlement
+                if coordinate_x and coordinate_y:
+                    all_settlement_coords.append(f"{settlement_name}({settlement_type}):({coordinate_x},{coordinate_y})")
+                    # Use the first city as primary city coordinates
+                    if settlement_type == 'city' and primary_city_coords is None:
+                        primary_city_coords = f"{coordinate_x},{coordinate_y}"
                 
                 buildings = buildings_by_settlement.get(settlement_id, [])
                 settlement_buildings = []
@@ -328,10 +364,13 @@ class PlayerDataAnalyzer:
                     settlement_buildings.append(f"{building_type}:{building_level}")
                 
                 if settlement_buildings:
-                    # Include settlement type in the metadata to distinguish outposts from cities
-                    player_buildings.append(f"{settlement_name}({settlement_level})[{settlement_type}]:[{','.join(settlement_buildings)}]")
+                    # Include settlement type and coordinates in the metadata
+                    coord_str = f"({coordinate_x},{coordinate_y})" if coordinate_x and coordinate_y else ''
+                    player_buildings.append(f"{settlement_name}({settlement_level})[{settlement_type}]{coord_str}:[{','.join(settlement_buildings)}]")
             
             player_data['buildings_metadata'] = '|'.join(player_buildings) if player_buildings else ''
+            player_data['primary_city_coordinates'] = primary_city_coords if primary_city_coords else ''
+            player_data['all_settlement_coordinates'] = '|'.join(all_settlement_coords) if all_settlement_coords else ''
             
             # Process skins
             equipped_skins = equipped_skins_by_player.get(player_id, [])

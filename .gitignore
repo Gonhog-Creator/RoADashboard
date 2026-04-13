@@ -17,3 +17,7 @@
 
 # Streamlit secrets
 .streamlit/
+
+# Local secrets files
+secrets.json
+S3Automation/secrets.json

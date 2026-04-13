@@ -72,16 +72,21 @@ class S3Automation:
     def process_tar_file(self, tar_path):
         """Process a tar file using PlayerDataAnalyzer"""
         try:
-            # Create a temporary directory for processing
-            process_dir = os.path.join(self.temp_dir, "processing")
+            # Create a unique temporary directory for processing this specific file
+            tar_filename = os.path.basename(tar_path)
+            process_dir = os.path.join(self.temp_dir, f"processing_{tar_filename}")
+            
+            # Clean up if directory exists from previous run
+            if os.path.exists(process_dir):
+                shutil.rmtree(process_dir)
+            
             os.makedirs(process_dir, exist_ok=True)
             
             # Copy tar file to processing directory
-            tar_filename = os.path.basename(tar_path)
             tar_copy = os.path.join(process_dir, tar_filename)
             shutil.copy(tar_path, tar_copy)
             
-            # Process using PlayerDataAnalyzer
+            # Process using PlayerDataAnalyzer (will only find this one file)
             analyzer = PlayerDataAnalyzer(process_dir)
             analyzer.generate_comprehensive_csv()
             

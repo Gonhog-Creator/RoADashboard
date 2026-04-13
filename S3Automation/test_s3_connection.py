@@ -5,8 +5,17 @@ Simple script to test S3 connection and list files in the bucket.
 """
 
 import os
+import json
 import boto3
 from datetime import datetime
+
+def load_secrets():
+    """Load secrets from local secrets.json file"""
+    secrets_file = os.path.join(os.path.dirname(__file__), 'secrets.json')
+    if os.path.exists(secrets_file):
+        with open(secrets_file, 'r') as f:
+            return json.load(f)
+    return None
 
 def test_s3_connection():
     # S3 Configuration
@@ -14,9 +23,15 @@ def test_s3_connection():
     s3_endpoint = 'https://s3.eu-west-par.io.cloud.ovh.net/'
     s3_bucket_name = 'rise-of-atlantis-csv-exports'
     
-    # Get credentials from environment variables or prompt
-    access_key = os.environ.get('S3_ACCESS_KEY_ID') or input("Enter S3 Access Key ID: ")
-    secret_key = os.environ.get('S3_SECRET_ACCESS_KEY') or input("Enter S3 Secret Access Key: ")
+    # Try to load from secrets file first
+    secrets = load_secrets()
+    if secrets:
+        access_key = secrets.get('S3_ACCESS_KEY_ID')
+        secret_key = secrets.get('S3_SECRET_ACCESS_KEY')
+    else:
+        # Fallback to environment variables or prompt
+        access_key = os.environ.get('S3_ACCESS_KEY_ID') or input("Enter S3 Access Key ID: ")
+        secret_key = os.environ.get('S3_SECRET_ACCESS_KEY') or input("Enter S3 Secret Access Key: ")
     
     try:
         # Initialize S3 client

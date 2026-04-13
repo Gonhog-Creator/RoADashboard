@@ -123,6 +123,37 @@ def create_skins_tab(filtered_df):
                         )
                     
                     if skins_data:
+                        # Create skin tiles with images
+                        skin_image_map = {
+                            'City Alpha All': 'skin_city_alpha_all-.webp',
+                            'City Alpha Level 9': 'skin_city_alpha_lvl9.webp',
+                            'City Founders': 'skin_city_founders.webp',
+                            'Water Pack Avatar Border': 'skin_water_pack_avatar_border.webp',
+                            'Water Pack Fortress': 'skin_water_pack_fortress.webp',
+                        }
+                        
+                        # Sort skins by player count
+                        sorted_skins = sorted(skins_data.items(), key=lambda x: x[1], reverse=True)
+                        
+                        # Display skin tiles in a responsive grid
+                        st.markdown("#### Tiles Skin Collection")
+                        cols_per_row = 5
+                        for i in range(0, len(sorted_skins), cols_per_row):
+                            cols = st.columns(min(cols_per_row, len(sorted_skins) - i))
+                            for j, (skin_name, player_count) in enumerate(sorted_skins[i:i + cols_per_row]):
+                                with cols[j]:
+                                    image_file = skin_image_map.get(skin_name, None)
+                                    if image_file:
+                                        image_path = f"Images/{image_file}"
+                                        try:
+                                            st.image(image_path, width=70)
+                                        except:
+                                            st.write("🎨")
+                                    else:
+                                        st.write("🎨")
+                                    
+                                    st.markdown(f"**{skin_name}**")
+                                    st.metric("Players", player_count)
                         # Create skin distribution dataframe
                         skins_df = pd.DataFrame(list(skins_data.items()), columns=['Skin Name', 'Player Count'])
                         skins_df = skins_df.sort_values('Player Count', ascending=False)
