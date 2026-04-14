@@ -326,6 +326,15 @@ class CacheManager:
         
         player_df = latest_data['raw_player_data']
         
+        # Calculate has_protection column for ceasefire detection
+        if 'active_effects' in player_df.columns:
+            attack_prevention_effects = ['prevent_attacks:1']
+            player_df['has_protection'] = player_df['active_effects'].fillna('').astype(str).apply(
+                lambda x: any(effect in x for effect in attack_prevention_effects)
+            )
+        else:
+            player_df['has_protection'] = False
+        
         # Resource mapping
         resource_mapping = {
             'Gold': 'resource_gold',
@@ -410,25 +419,24 @@ class CacheManager:
                     
                     player_unprotected = max(0, player_amount - player_protected)
                     
-                    # Only include if player has unprotected resources
-                    if player_unprotected > 0:
+                    # Get defended status
+                    defended = False
+                    if 'defending_troops' in player and pd.notna(player['defending_troops']) and player['defending_troops'] > 0:
+                        defended = True
+                    elif 'troops' in player and pd.notna(player['troops']) and player['troops'] > 0:
+                        defended = True
+                    
+                    # Get ceasefire protected status
+                    ceasefire_protected = player.get('has_protection', False)
+                    
+                    # Only include if player has unprotected resources AND is not ceasefire protected
+                    if player_unprotected > 0 and not ceasefire_protected:
                         username = player.get('username', 'Unknown')
-                        
-                        # Get defended status
-                        defended = False
-                        if 'defending_troops' in player and pd.notna(player['defending_troops']) and player['defending_troops'] > 0:
-                            defended = True
-                        elif 'troops' in player and pd.notna(player['troops']) and player['troops'] > 0:
-                            defended = True
-                        
-                        # Get ceasefire protected status
-                        ceasefire_protected = player.get('has_protection', False)
                         
                         data_list.append({
                             'Player Name': username,
                             f'{resource_name} Amount': int(player_unprotected),
-                            'Defended': defended,
-                            'Ceasefire Protected': ceasefire_protected
+                            'Defended': defended
                         })
                 
                 # Sort by resource amount descending

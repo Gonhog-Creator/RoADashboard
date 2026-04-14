@@ -182,53 +182,59 @@ def create_buildings_tab(filtered_df):
                                 st.metric("Total Count", stats['total_count'])
                 
                 # Interactive building selector
-                st.markdown("#### Interactive Interactive Building Analysis")
+                # Render in fragment for instant selectbox updates
+                render_building_analysis(building_stats)
+
+@st.fragment
+def render_building_analysis(building_stats):
+    """Fragment for Interactive Building Analysis - only reruns when selectbox changes"""
+    st.markdown("#### Interactive Interactive Building Analysis")
+    
+    if building_stats:
+        # Building selection
+        building_names = list(building_stats.keys())
+        selected_building = st.selectbox(
+            "Select a building to analyze:",
+            building_names,
+            format_func=lambda x: x.replace('_', ' ').title()
+        )
+        
+        if selected_building:
+            stats = building_stats[selected_building]
+            
+            # Display building statistics
+            col1 = st.columns(1)[0]
+            
+            with col1:
+                st.metric("Total Count", stats['total_count'])
+            
+            # Level distribution chart
+            st.markdown(f"##### Trends {selected_building.replace('_', ' ').title()} Level Distribution")
+            
+            level_dist = stats['level_distribution']
+            if level_dist:
+                # Extract numeric level for sorting and display
+                level_data = []
+                for level_key, count in level_dist.items():
+                    # Extract numeric part from "Level 1", "Level 2", etc.
+                    level_num = int(level_key.replace('Level ', ''))
+                    level_data.append({'Level': level_num, 'Count': count})
                 
-                if building_stats:
-                    # Building selection
-                    building_names = list(building_stats.keys())
-                    selected_building = st.selectbox(
-                        "Select a building to analyze:",
-                        building_names,
-                        format_func=lambda x: x.replace('_', ' ').title()
-                    )
-                    
-                    if selected_building:
-                        stats = building_stats[selected_building]
-                        
-                        # Display building statistics
-                        col1 = st.columns(1)[0]
-                        
-                        with col1:
-                            st.metric("Total Count", stats['total_count'])
-                        
-                        # Level distribution chart
-                        st.markdown(f"##### Trends {selected_building.replace('_', ' ').title()} Level Distribution")
-                        
-                        level_dist = stats['level_distribution']
-                        if level_dist:
-                            # Extract numeric level for sorting and display
-                            level_data = []
-                            for level_key, count in level_dist.items():
-                                # Extract numeric part from "Level 1", "Level 2", etc.
-                                level_num = int(level_key.replace('Level ', ''))
-                                level_data.append({'Level': level_num, 'Count': count})
-                            
-                            level_df = pd.DataFrame(level_data)
-                            level_df = level_df.sort_values('Level')
-                            
-                            fig_level = px.bar(
-                                level_df,
-                                x='Level',
-                                y='Count',
-                                title=f"Distribution of {selected_building.replace('_', ' ').title()} Levels"
-                            )
-                            fig_level.update_layout(
-                                xaxis_title="Building Level",
-                                yaxis_title="Number of Buildings",
-                                height=400
-                            )
-                            st.plotly_chart(fig_level, width='stretch')
+                level_df = pd.DataFrame(level_data)
+                level_df = level_df.sort_values('Level')
+                
+                fig_level = px.bar(
+                    level_df,
+                    x='Level',
+                    y='Count',
+                    title=f"Distribution of {selected_building.replace('_', ' ').title()} Levels"
+                )
+                fig_level.update_layout(
+                    xaxis_title="Building Level",
+                    yaxis_title="Number of Buildings",
+                    height=400
+                )
+                st.plotly_chart(fig_level, width='stretch')
     
     else:
         st.info("No data available for building analysis")

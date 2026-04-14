@@ -101,21 +101,8 @@ def create_map_tab(filtered_df):
             st.warning("No settlement data found.")
             return
         
-        # Player search
-        st.markdown("#### Player Search")
-        search_username = st.text_input("Search by username (partial match)")
-        
-        if search_username:
-            search_results = [s for s in settlements if search_username.lower() in s['username'].lower()]
-            if search_results:
-                st.markdown(f"Found {len(search_results)} settlement(s) for players matching '{search_username}':")
-                for result in search_results:
-                    st.write(f"- **{result['username']}**: {result['name']} ({result['type'].title()}) at coordinates ({result['x']}, {result['y']})")
-            else:
-                st.warning(f"No settlements found for username matching '{search_username}'")
-            st.markdown("---")
-        
-        # Separate cities and outposts by subtype
+        # Player search - render in fragment for instant search updates
+        render_settlement_search(settlements)
         cities = [s for s in settlements if s['type'] == 'city']
         outposts = [s for s in settlements if s['type'] == 'outpost']
         
@@ -259,3 +246,20 @@ def create_map_tab(filtered_df):
         ))
         
         st.plotly_chart(fig, width='stretch')
+
+@st.fragment
+def render_settlement_search(settlements):
+    """Fragment for settlement search - only reruns when search input changes"""
+    # Player search
+    st.markdown("#### Player Search")
+    search_username = st.text_input("Search by username (partial match)")
+    
+    if search_username:
+        search_results = [s for s in settlements if search_username.lower() in s['username'].lower()]
+        if search_results:
+            st.markdown(f"Found {len(search_results)} settlement(s) for players matching '{search_username}':")
+            for result in search_results:
+                st.write(f"- **{result['username']}**: {result['name']} ({result['type'].title()}) at coordinates ({result['x']}, {result['y']})")
+        else:
+            st.warning(f"No settlements found for username matching '{search_username}'")
+        st.markdown("---")

@@ -144,178 +144,183 @@ def create_alliance_tab(filtered_df):
             st.session_state['favorite_alliances'] = load_favorite_alliances()
         
         # Create alliance selection dropdown with favorites at top
+        # Render in fragment for instant selectbox updates
+        render_alliance_selection(alliance_names, current_stats)
+
+@st.fragment
+def render_alliance_selection(alliance_names, current_stats):
+    """Fragment for alliance selection and display - only reruns when selectbox changes"""
+    # Prepend favorites to the dropdown list with star prefix
+    dropdown_options = []
+    for fav in st.session_state['favorite_alliances']:
+        if fav in alliance_names:
+            dropdown_options.append(f"⭐ {fav}")
+    
+    # Add remaining alliances
+    for alliance in alliance_names:
+        if alliance not in st.session_state['favorite_alliances']:
+            dropdown_options.append(alliance)
+    
+    selected_alliance_display = st.selectbox(
+        "Select an Alliance:",
+        options=dropdown_options,
+        index=0 if dropdown_options else None
+    )
+    
+    # Remove star prefix to get actual alliance name
+    if selected_alliance_display:
+        selected_alliance = selected_alliance_display.replace("⭐ ", "") if selected_alliance_display.startswith("⭐ ") else selected_alliance_display
+    else:
+        selected_alliance = None
+    
+    if selected_alliance:
+        current_data = current_stats[selected_alliance]
         
-        # Prepend favorites to the dropdown list with star prefix
-        dropdown_options = []
-        for fav in st.session_state['favorite_alliances']:
-            if fav in alliance_names:
-                dropdown_options.append(f"⭐ {fav}")
-        
-        # Add remaining alliances
-        for alliance in alliance_names:
-            if alliance not in st.session_state['favorite_alliances']:
-                dropdown_options.append(alliance)
-        
-        selected_alliance_display = st.selectbox(
-            "Select an Alliance:",
-            options=dropdown_options,
-            index=0 if dropdown_options else None
-        )
-        
-        # Remove star prefix to get actual alliance name
-        if selected_alliance_display:
-            selected_alliance = selected_alliance_display.replace("⭐ ", "") if selected_alliance_display.startswith("⭐ ") else selected_alliance_display
-        else:
-            selected_alliance = None
-        
-        if selected_alliance:
-            current_data = current_stats[selected_alliance]
-            
-            # Add to favorites button
-            col_left, col_right = st.columns([3, 1])
-            with col_left:
-                st.markdown(f"#### {selected_alliance}")
-            with col_right:
-                is_favorited = selected_alliance in st.session_state['favorite_alliances']
-                if is_favorited:
-                    if st.button("⭐ Remove", key="toggle_fav"):
-                        st.session_state['favorite_alliances'].remove(selected_alliance)
+        # Add to favorites button
+        col_left, col_right = st.columns([3, 1])
+        with col_left:
+            st.markdown(f"#### {selected_alliance}")
+        with col_right:
+            is_favorited = selected_alliance in st.session_state['favorite_alliances']
+            if is_favorited:
+                if st.button("⭐ Remove", key="toggle_fav"):
+                    st.session_state['favorite_alliances'].remove(selected_alliance)
+                    save_favorite_alliances(st.session_state['favorite_alliances'])
+                    st.success(f"Removed {selected_alliance} from favorites")
+            else:
+                if st.button("⭐ Add", key="toggle_fav"):
+                    if len(st.session_state['favorite_alliances']) < 5:
+                        st.session_state['favorite_alliances'].append(selected_alliance)
                         save_favorite_alliances(st.session_state['favorite_alliances'])
-                        st.success(f"Removed {selected_alliance} from favorites")
-                else:
-                    if st.button("⭐ Add", key="toggle_fav"):
-                        if len(st.session_state['favorite_alliances']) < 5:
-                            st.session_state['favorite_alliances'].append(selected_alliance)
-                            save_favorite_alliances(st.session_state['favorite_alliances'])
-                            st.success(f"Added {selected_alliance} to favorites")
-                        else:
-                            st.warning("Maximum 5 favorites allowed")
+                        st.success(f"Added {selected_alliance} to favorites")
+                    else:
+                        st.warning("Maximum 5 favorites allowed")
+        
+        # Daily gains not implemented with cache manager yet
+        daily_gains = {}
+        
+        # Display metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                "Total Members",
+                f"{current_data['total_members']:,}",
+                delta=format_change(daily_gains.get('members', 0)) if daily_gains else None
+            )
+        
+        with col2:
+            st.metric(
+                "Total Power",
+                format_number(current_data['total_power']),
+                delta=format_change(daily_gains.get('power', 0)) if daily_gains else None
+            )
+        
+        with col3:
+            st.metric(
+                "Total Troops",
+                format_number(current_data['total_troops']),
+                delta=format_change(daily_gains.get('troops', 0)) if daily_gains else None
+            )
+        
+        st.markdown("---")
+        st.markdown("#### Total Resources")
+        
+        # Display resource metrics
+        resource_cols = st.columns(5)
+        resource_names = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
+        resource_display_names = ['Gold', 'Lumber', 'Stone', 'Metal', 'Food']
+        
+        for i, (resource, display_name) in enumerate(zip(resource_names, resource_display_names)):
+            if resource in current_data['total_resources']:
+                with resource_cols[i]:
+                    st.metric(
+                        display_name,
+                        format_number(current_data['total_resources'][resource]),
+                        delta=format_change(daily_gains.get(resource, 0)) if daily_gains else None
+                    )
+        
+        st.markdown("---")
+        
+        # Show alliance member list using cached player lookup
+        st.markdown(f"#### Alliance Members ({current_data['total_members']})")
+        
+        # Get player IDs from cached alliance stats
+        player_ids = current_data.get('player_ids', [])
+        
+        # Build member list from cache
+        member_list = []
+        for player_id in player_ids:
+            player_data = cache_manager.get_player_data(player_id)
+            if player_data:
+                member_list.append(player_data)
+        
+        if member_list:
+            # Convert to DataFrame
+            member_df = pd.DataFrame(member_list)
             
-            # Daily gains not implemented with cache manager yet
-            daily_gains = {}
+            # Prepare member data for display
+            display_columns = ['username', 'power', 'troops_json', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
+            available_columns = [col for col in display_columns if col in member_df.columns]
             
-            # Display metrics
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric(
-                    "Total Members",
-                    f"{current_data['total_members']:,}",
-                    delta=format_change(daily_gains.get('members', 0)) if daily_gains else None
-                )
-            
-            with col2:
-                st.metric(
-                    "Total Power",
-                    format_number(current_data['total_power']),
-                    delta=format_change(daily_gains.get('power', 0)) if daily_gains else None
-                )
-            
-            with col3:
-                st.metric(
-                    "Total Troops",
-                    format_number(current_data['total_troops']),
-                    delta=format_change(daily_gains.get('troops', 0)) if daily_gains else None
-                )
-            
-            st.markdown("---")
-            st.markdown("#### Total Resources")
-            
-            # Display resource metrics
-            resource_cols = st.columns(5)
-            resource_names = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
-            resource_display_names = ['Gold', 'Lumber', 'Stone', 'Metal', 'Food']
-            
-            for i, (resource, display_name) in enumerate(zip(resource_names, resource_display_names)):
-                if resource in current_data['total_resources']:
-                    with resource_cols[i]:
-                        st.metric(
-                            display_name,
-                            format_number(current_data['total_resources'][resource]),
-                            delta=format_change(daily_gains.get(resource, 0)) if daily_gains else None
-                        )
-            
-            st.markdown("---")
-            
-            # Show alliance member list using cached player lookup
-            st.markdown(f"#### Alliance Members ({current_data['total_members']})")
-            
-            # Get player IDs from cached alliance stats
-            player_ids = current_data.get('player_ids', [])
-            
-            # Build member list from cache
-            member_list = []
-            for player_id in player_ids:
-                player_data = cache_manager.get_player_data(player_id)
-                if player_data:
-                    member_list.append(player_data)
-            
-            if member_list:
-                # Convert to DataFrame
-                member_df = pd.DataFrame(member_list)
+            if available_columns:
+                member_table = member_df[available_columns].copy()
                 
-                # Prepare member data for display
-                display_columns = ['username', 'power', 'troops_json', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
-                available_columns = [col for col in display_columns if col in member_df.columns]
+                # Calculate troops count from troops_json if available
+                if 'troops_json' in member_table.columns:
+                    def calculate_troops(troops_json):
+                        if pd.isna(troops_json):
+                            return 0
+                        try:
+                            troops_dict = json.loads(troops_json)
+                            total = 0
+                            for troop_name, count in troops_dict.items():
+                                if isinstance(count, str):
+                                    continue
+                                if hasattr(count, 'item'):
+                                    numeric_count = count.item()
+                                else:
+                                    numeric_count = count
+                                if isinstance(numeric_count, (int, float)) and not pd.isna(numeric_count):
+                                    total += numeric_count
+                            return total
+                        except:
+                            return 0
+                    member_table['Troops'] = member_table['troops_json'].apply(calculate_troops)
+                    display_columns = ['username', 'power', 'Troops', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
+                    available_columns = [col for col in display_columns if col in member_table.columns]
+                    member_table = member_table[available_columns].copy()
                 
-                if available_columns:
-                    member_table = member_df[available_columns].copy()
-                    
-                    # Calculate troops count from troops_json if available
-                    if 'troops_json' in member_table.columns:
-                        def calculate_troops(troops_json):
-                            if pd.isna(troops_json):
-                                return 0
-                            try:
-                                troops_dict = json.loads(troops_json)
-                                total = 0
-                                for troop_name, count in troops_dict.items():
-                                    if isinstance(count, str):
-                                        continue
-                                    if hasattr(count, 'item'):
-                                        numeric_count = count.item()
-                                    else:
-                                        numeric_count = count
-                                    if isinstance(numeric_count, (int, float)) and not pd.isna(numeric_count):
-                                        total += numeric_count
-                                return total
-                            except:
-                                return 0
-                        member_table['Troops'] = member_table['troops_json'].apply(calculate_troops)
-                        display_columns = ['username', 'power', 'Troops', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
-                        available_columns = [col for col in display_columns if col in member_table.columns]
-                        member_table = member_table[available_columns].copy()
-                    
-                    # Sort by power (descending)
-                    member_table = member_table.sort_values('power', ascending=False)
-                    
-                    # Rename columns for better display
-                    column_rename_map = {
-                        'username': 'Player Name',
-                        'power': 'Power',
-                        'troops_json': 'Troops',
-                        'Troops': 'Troops',
-                        'resource_gold': 'Gold',
-                        'resource_lumber': 'Lumber',
-                        'resource_stone': 'Stone',
-                        'resource_metal': 'Metal',
-                        'resource_food': 'Food'
-                    }
-                    
-                    member_table = member_table.rename(columns=column_rename_map)
-                    
-                    # Format power, troops, and resource columns
-                    if 'Power' in member_table.columns:
-                        member_table['Power'] = member_table['Power'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else '0')
-                    
-                    if 'Troops' in member_table.columns:
-                        member_table['Troops'] = member_table['Troops'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else '0')
-                    
-                    for resource in ['Gold', 'Lumber', 'Stone', 'Metal', 'Food']:
-                        if resource in member_table.columns:
-                            member_table[resource] = member_table[resource].apply(lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else '0')
-                    
-                    st.dataframe(member_table, width='stretch', hide_index=True)
+                # Sort by power (descending)
+                member_table = member_table.sort_values('power', ascending=False)
+                
+                # Rename columns for better display
+                column_rename_map = {
+                    'username': 'Player Name',
+                    'power': 'Power',
+                    'troops_json': 'Troops',
+                    'Troops': 'Troops',
+                    'resource_gold': 'Gold',
+                    'resource_lumber': 'Lumber',
+                    'resource_stone': 'Stone',
+                    'resource_metal': 'Metal',
+                    'resource_food': 'Food'
+                }
+                
+                member_table = member_table.rename(columns=column_rename_map)
+                
+                # Format power, troops, and resource columns
+                if 'Power' in member_table.columns:
+                    member_table['Power'] = member_table['Power'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else '0')
+                
+                if 'Troops' in member_table.columns:
+                    member_table['Troops'] = member_table['Troops'].apply(lambda x: f"{int(x):,}" if pd.notna(x) else '0')
+                
+                for resource in ['Gold', 'Lumber', 'Stone', 'Metal', 'Food']:
+                    if resource in member_table.columns:
+                        member_table[resource] = member_table[resource].apply(lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else '0')
+                
+                st.dataframe(member_table, width='stretch', hide_index=True)
     
     else:
         st.info("No data available for alliance analysis")

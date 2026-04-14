@@ -593,39 +593,43 @@ def create_pdd_tab(filtered_df):
                 power = player.get('power', 0)
                 player_options.append(f"{player_name} | {alliance_name} | {int(power):,}")
             
-            # Search box
-            search_query = st.text_input("Search for a player:", placeholder="Type player name...")
-            
-            # Filter player options based on search
-            if search_query:
-                filtered_options = [opt for opt in player_options if search_query.lower() in opt.lower()]
-            else:
-                filtered_options = player_options[:100]  # Show first 100 by default
-            
-            if filtered_options:
-                # Default to logged-in user if they're one of the four authorized users
-                authorized_users = ['Gonhog', 'Moachi', 'Skenz', 'Higgins']
-                default_index = 0
-                if 'username' in st.session_state and st.session_state.username in authorized_users:
-                    logged_in_user = st.session_state.username
-                    # Find the index of the logged-in user in filtered_options
-                    for i, option in enumerate(filtered_options):
-                        if option.startswith(logged_in_user + ' |'):
-                            default_index = i
-                            break
-                
-                selected_player_option = st.selectbox("Select a player:", options=filtered_options, index=default_index)
-                
-                # Parse selected player
-                selected_name = selected_player_option.split(' | ')[0]
-                
-                # Get player data from cache manager
-                player_data = cache_manager.get_player_data_by_name(selected_name)
-                
-                if player_data:
-                    # Render all player details in fragment for instant widget updates
-                    render_player_details(selected_name, player_data, latest_data, filtered_df)
-            else:
-                st.info("No players found matching your search.")
+            # Render player search in fragment for instant search updates
+            render_player_search(player_options, latest_data, filtered_df)
+
+@st.fragment
+def render_player_search(player_options, latest_data, filtered_df):
+    """Fragment for player search - only reruns when search input changes"""
+    # Search box
+    search_query = st.text_input("Search for a player:", placeholder="Type player name...")
+    
+    # Filter player options based on search
+    if search_query:
+        filtered_options = [opt for opt in player_options if search_query.lower() in opt.lower()]
     else:
-        st.info("No data available for player analysis.")
+        filtered_options = player_options[:100]  # Show first 100 by default
+    
+    if filtered_options:
+        # Default to logged-in user if they're one of the four authorized users
+        authorized_users = ['Gonhog', 'Moachi', 'Skenz', 'Higgins']
+        default_index = 0
+        if 'username' in st.session_state and st.session_state.username in authorized_users:
+            logged_in_user = st.session_state.username
+            # Find the index of the logged-in user in filtered_options
+            for i, option in enumerate(filtered_options):
+                if option.startswith(logged_in_user + ' |'):
+                    default_index = i
+                    break
+        
+        selected_player_option = st.selectbox("Select a player:", options=filtered_options, index=default_index)
+        
+        # Parse selected player
+        selected_name = selected_player_option.split(' | ')[0]
+        
+        # Get player data from cache manager
+        player_data = cache_manager.get_player_data_by_name(selected_name)
+        
+        if player_data:
+            # Render all player details in fragment for instant widget updates
+            render_player_details(selected_name, player_data, latest_data, filtered_df)
+    else:
+        st.info("No players found matching your search.")

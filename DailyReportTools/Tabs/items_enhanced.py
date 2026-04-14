@@ -239,73 +239,78 @@ def create_items_tab(df):
         # Category table
         st.dataframe(category_df, width='stretch')
         
-        # Item selection by category
-        st.markdown("#### Analysis Detailed Item Analysis")
+        # Item selection by category - render in fragment for instant selectbox updates
+        render_item_analysis(sorted_categories, player_df, normalize_item_name)
+
+@st.fragment
+def render_item_analysis(sorted_categories, player_df, normalize_item_name):
+    """Fragment for item category and item selection - only reruns when selectbox changes"""
+    st.markdown("#### Analysis Detailed Item Analysis")
+    
+    selected_category = st.selectbox(
+        "Select a category to analyze:",
+        options=list(sorted_categories.keys()),
+        index=0
+    )
+    
+    if selected_category:
+        category_items = sorted_categories[selected_category]
         
-        selected_category = st.selectbox(
-            "Select a category to analyze:",
-            options=list(sorted_categories.keys()),
-            index=0
-        )
-        
-        if selected_category:
-            category_items = sorted_categories[selected_category]
+        if category_items:
+            # Create item dataframe for this category
+            item_data = []
+            for item_name, stats in category_items.items():
+                item_data.append({
+                    'Item Name': normalize_item_name(item_name),
+                    'Total Count': stats['total_count'],
+                    'Players with Item': stats['players_with_item'],
+                    'Avg per Player': f"{stats['avg_per_player']:.1f}",
+                    'Max Single Player': stats['max_single_player']
+                })
             
-            if category_items:
-                # Create item dataframe for this category
-                item_data = []
-                for item_name, stats in category_items.items():
-                    item_data.append({
-                        'Item Name': normalize_item_name(item_name),
-                        'Total Count': stats['total_count'],
-                        'Players with Item': stats['players_with_item'],
-                        'Avg per Player': f"{stats['avg_per_player']:.1f}",
-                        'Max Single Player': stats['max_single_player']
-                    })
+            item_df = pd.DataFrame(item_data)
+            st.dataframe(item_df, width='stretch')
+            
+            # Top items visualization
+            top_items = item_df.head(10)
+            
+            fig_items = px.bar(
+                top_items,
+                x='Total Count',
+                y='Item Name',
+                orientation='h',
+                title=f'Top 10 {selected_category}',
+                color='Total Count',
+                color_continuous_scale='viridis'
+            )
+            fig_items.update_layout(
+                xaxis_title="Total Count",
+                yaxis_title="Item Name",
+                height=500
+            )
+            st.plotly_chart(fig_items, width='stretch')
+            
+            # Individual item analysis
+            selected_item = st.selectbox(
+                "Select an item for detailed analysis:",
+                options=list(category_items.keys()),
+                format_func=normalize_item_name,
+                index=0
+            )
+            
+            if selected_item:
+                item_col = f'item_{selected_item}'
                 
-                item_df = pd.DataFrame(item_data)
-                st.dataframe(item_df, width='stretch')
-                
-                # Top items visualization
-                top_items = item_df.head(10)
-                
-                fig_items = px.bar(
-                    top_items,
-                    x='Total Count',
-                    y='Item Name',
-                    orientation='h',
-                    title=f'Top 10 {selected_category}',
-                    color='Total Count',
-                    color_continuous_scale='viridis'
-                )
-                fig_items.update_layout(
-                    xaxis_title="Total Count",
-                    yaxis_title="Item Name",
-                    height=500
-                )
-                st.plotly_chart(fig_items, width='stretch')
-                
-                # Individual item analysis
-                selected_item = st.selectbox(
-                    "Select an item for detailed analysis:",
-                    options=list(category_items.keys()),
-                    format_func=normalize_item_name,
-                    index=0
-                )
-                
-                if selected_item:
-                    item_col = f'item_{selected_item}'
+                if item_col in player_df.columns:
+                    st.markdown(f"##### Players Players with {normalize_item_name(selected_item)}")
                     
-                    if item_col in player_df.columns:
-                        st.markdown(f"##### Players Players with {normalize_item_name(selected_item)}")
-                        
-                        # Get players with this item
-                        item_players = player_df[player_df[item_col] > 0][
-                            ['account_id', 'alliance_name', 'power', item_col]
-                        ].copy()
-                        item_players.columns = ['Account ID', 'Alliance', 'Power', 'Item Count']
-                        item_players['Account ID'] = item_players['Account ID'].str[:8] + "..."
-                        item_players = item_players.sort_values('Item Count', ascending=False)
+                    # Get players with this item
+                    item_players = player_df[player_df[item_col] > 0][
+                        ['account_id', 'alliance_name', 'power', item_col]
+                    ].copy()
+                    item_players.columns = ['Account ID', 'Alliance', 'Power', 'Item Count']
+                    item_players['Account ID'] = item_players['Account ID'].str[:8] + "..."
+                    item_players = item_players.sort_values('Item Count', ascending=False)
                         
                         st.dataframe(item_players.head(20), width='stretch')
                         

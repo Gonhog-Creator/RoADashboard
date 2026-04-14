@@ -285,64 +285,9 @@ def create_ceasefire_tab(filtered_df):
         unprotected_fangtooth = max(0, total_fangtooth - protected_fangtooth)
         
         # Create unprotected resources table with clickable buttons
-        st.markdown("##### Unprotected Resources by Type (Click to view players)")
-        
-        resource_mapping = {
-            'Food': ('resource_food', unprotected_by_type.get('food', 0)),
-            'Lumber': ('resource_lumber', unprotected_by_type.get('lumber', 0)),
-            'Stone': ('resource_stone', unprotected_by_type.get('stone', 0)),
-            'Metal': ('resource_metal', unprotected_by_type.get('metal', 0)),
-            'Gold': ('resource_gold', unprotected_by_type.get('gold', 0)),
-            'Fangtooth Respirators': ('resource_fangtooth', unprotected_fangtooth)
-        }
-        
-        # Calculate total amounts for each resource type to get percentages
-        resource_totals = {}
-        for resource_name, (resource_col, _) in resource_mapping.items():
-            if resource_col in player_data.columns:
-                resource_totals[resource_name] = player_data[resource_col].fillna(0).sum()
-            else:
-                resource_totals[resource_name] = 0
-        
-        # Create clickable buttons for each resource
-        cols = st.columns(len(resource_mapping))
-        for i, (resource_name, (resource_col, unprotected_amount)) in enumerate(resource_mapping.items()):
-            with cols[i]:
-                button_key = f"unprotected_{resource_name.lower().replace(' ', '_')}"
-                # Calculate percentage of total for this resource
-                total_amount = resource_totals.get(resource_name, 0)
-                percentage = (unprotected_amount / total_amount * 100) if total_amount > 0 else 0
-                button_text = f"{resource_name}: {format_number(unprotected_amount)} ({percentage:.1f}%)"
-                if st.button(button_text, key=button_key, width='stretch'):
-                    st.session_state['selected_resource'] = resource_name
-                    st.session_state['selected_resource_col'] = resource_col
-        
-        # Get cached resource data from cache manager (pre-calculated at startup)
-        cached_resource_data = cache_manager.get_resource_data()
-        
-        # Show modal if a resource is selected
-        if 'selected_resource' in st.session_state and st.session_state['selected_resource']:
-            selected_resource = st.session_state['selected_resource']
-            
-            # Get cached data
-            display_data = cached_resource_data.get(selected_resource, [])
-            
-            # Create expander with player information (modal-like)
-            with st.expander(f"📊 Players with Unprotected {selected_resource}", expanded=True):
-                if display_data:
-                    display_df = pd.DataFrame(display_data)
-                    display_df[f'{selected_resource} Amount'] = display_df[f'{selected_resource} Amount'].apply(lambda x: f"{x:,}")
-                    display_df['Defended'] = display_df['Defended'].apply(lambda x: 'Yes' if x else 'No')
-                    display_df['Ceasefire Protected'] = display_df['Ceasefire Protected'].apply(lambda x: 'Yes' if x else 'No')
-                    st.dataframe(display_df, width='stretch', hide_index=True)
-                else:
-                    st.info(f"No players found with {selected_resource}")
-                
-                if st.button("Close", key="close_expander"):
-                    st.session_state.pop('selected_resource', None)
-                    st.session_state.pop('selected_resource_col', None)
-                    st.rerun()
-        
+        # Render in fragment for instant button updates
+        render_unprotected_resources(unprotected_by_type, unprotected_fangtooth, player_data, vault_protected_resources, total_protected_adjusted, total_protected, total_resources, total_players)
+
         st.markdown("---")
         
         # Player details table (simplified)
@@ -386,6 +331,47 @@ def create_ceasefire_tab(filtered_df):
                     player_table[resource] = player_table[resource].apply(lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else '0')
             
             st.dataframe(player_table, width='stretch', hide_index=True)
+            
+            # Add pie charts for each resource
+            st.markdown("##### Resource Distribution Among Protected Players")
+            
+            resources = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
+            resource_display_names = {'resource_gold': 'Gold', 'resource_lumber': 'Lumber', 'resource_stone': 'Stone', 'resource_metal': 'Metal', 'resource_food': 'Food'}
+            cols = st.columns(len(resources))
+            
+            for i, resource in enumerate(resources):
+                if resource in protected_players.columns:
+                    with cols[i]:
+                        resource_data = protected_players[resource].fillna(0)
+                        # Filter out players with 0 of this resource
+                        resource_data_filtered = resource_data[resource_data > 0]
+                        
+                        if not resource_data_filtered.empty:
+                            # Get player names for non-zero values
+                            player_names = protected_players.loc[resource_data_filtered.index, 'username']
+                            
+                            # Create pie chart using plotly express for simpler rendering
+                            pie_df = pd.DataFrame({
+                                'Player': player_names,
+                                'Amount': resource_data_filtered.values
+                            })
+                            
+                            fig_pie = px.pie(
+                                pie_df,
+                                values='Amount',
+                                names='Player',
+                                title=f"{resource_display_names[resource]} Distribution",
+                                hole=0.3,
+                                height=300
+                            )
+                            fig_pie.update_layout(
+                                margin=dict(l=0, r=0, t=40, b=0),
+                                showlegend=False
+                            )
+                            fig_pie.update_traces(textinfo='label+percent', textposition='inside')
+                            st.plotly_chart(fig_pie, width='stretch')
+                        else:
+                            st.write(f"No {resource_display_names[resource]} data available")
         
         st.markdown("---")
         
@@ -423,3 +409,63 @@ def create_ceasefire_tab(filtered_df):
     
     else:
         st.info("No data available for protected resources analysis.")
+
+@st.fragment
+def render_unprotected_resources(unprotected_by_type, unprotected_fangtooth, player_data, vault_protected_resources, total_protected_adjusted, total_protected, total_resources, total_players):
+    """Fragment for Unprotected Resources section - only reruns when buttons are clicked"""
+    st.markdown("##### Unprotected Resources by Type (Click to view players)")
+    
+    resource_mapping = {
+        'Food': ('resource_food', unprotected_by_type.get('food', 0)),
+        'Lumber': ('resource_lumber', unprotected_by_type.get('lumber', 0)),
+        'Stone': ('resource_stone', unprotected_by_type.get('stone', 0)),
+        'Metal': ('resource_metal', unprotected_by_type.get('metal', 0)),
+        'Gold': ('resource_gold', unprotected_by_type.get('gold', 0)),
+        'Fangtooth Respirators': ('resource_fangtooth', unprotected_fangtooth)
+    }
+    
+    # Calculate total amounts for each resource type to get percentages
+    resource_totals = {}
+    for resource_name, (resource_col, _) in resource_mapping.items():
+        if resource_col in player_data.columns:
+            resource_totals[resource_name] = player_data[resource_col].fillna(0).sum()
+        else:
+            resource_totals[resource_name] = 0
+    
+    # Create clickable buttons for each resource
+    cols = st.columns(len(resource_mapping))
+    for i, (resource_name, (resource_col, unprotected_amount)) in enumerate(resource_mapping.items()):
+        with cols[i]:
+            button_key = f"unprotected_{resource_name.lower().replace(' ', '_')}"
+            # Calculate percentage of total for this resource
+            total_amount = resource_totals.get(resource_name, 0)
+            percentage = (unprotected_amount / total_amount * 100) if total_amount > 0 else 0
+            button_text = f"{resource_name}: {format_number(unprotected_amount)} ({percentage:.1f}%)"
+            if st.button(button_text, key=button_key, width='stretch'):
+                st.session_state['selected_resource'] = resource_name
+                st.session_state['selected_resource_col'] = resource_col
+    
+    # Get cached resource data from cache manager (pre-calculated at startup)
+    cached_resource_data = cache_manager.get_resource_data()
+    
+    # Show modal if a resource is selected
+    if 'selected_resource' in st.session_state and st.session_state['selected_resource']:
+        selected_resource = st.session_state['selected_resource']
+        
+        # Get cached data
+        display_data = cached_resource_data.get(selected_resource, [])
+        
+        # Create expander with player information (modal-like)
+        with st.expander(f"📊 Players with Unprotected {selected_resource}", expanded=True):
+            if display_data:
+                display_df = pd.DataFrame(display_data)
+                display_df[f'{selected_resource} Amount'] = display_df[f'{selected_resource} Amount'].apply(lambda x: f"{x:,}")
+                display_df['Defended'] = display_df['Defended'].apply(lambda x: 'Yes' if x else 'No')
+                st.dataframe(display_df, width='stretch', hide_index=True)
+            else:
+                st.info(f"No players found with {selected_resource}")
+            
+            if st.button("Close", key="close_expander"):
+                st.session_state.pop('selected_resource', None)
+                st.session_state.pop('selected_resource_col', None)
+                st.rerun()

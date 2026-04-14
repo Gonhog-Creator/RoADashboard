@@ -209,6 +209,12 @@ def create_items_tab(df):
     if 'ZZZ Other Items' in sorted_categories:
         sorted_categories['Other Items'] = sorted_categories.pop('ZZZ Other Items')
     
+    # Render item analysis in fragment for instant checkbox updates
+    render_items_analysis(sorted_categories, df, use_comprehensive)
+
+@st.fragment
+def render_items_analysis(sorted_categories, df, use_comprehensive):
+    """Fragment for item selection and analysis - only reruns when checkboxes change"""
     # Multi-select checkboxes with collapsible categories
     st.markdown("#### 🔍 Select Items to Analyze")
     
