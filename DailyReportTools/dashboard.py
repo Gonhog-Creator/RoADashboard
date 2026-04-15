@@ -18,6 +18,7 @@ from Tabs.ceasefire import create_ceasefire_tab
 from Tabs.map import create_map_tab
 from Tabs.alliance import create_alliance_tab
 from Tabs.pdd import create_pdd_tab
+from Tabs.daily_report import create_daily_report_tab
 from cache_manager import cache_manager
 
 def get_realm_name(realm_id):
@@ -343,12 +344,15 @@ else:
     cache_manager.initialize_cache(filtered_df)
     
     # Tabs for different views
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14 = st.tabs(["Overview", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research", "Protected Resources", "Map", "Alliance", "PDD"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs(["Overview", "Daily Report", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research", "Protected Resources", "Map", "Alliance", "PDD"])
     
     with tab1:
         create_overview_tab(filtered_df)
     
     with tab2:
+        create_daily_report_tab(filtered_df)
+    
+    with tab3:
         # Weekly and Monthly Growth
         st.markdown("### 📊 Growth Analysis")
         
@@ -514,40 +518,40 @@ else:
             else:
                 st.warning("No comprehensive data file found")
     
-    with tab3:
+    with tab4:
         create_resources_tab(filtered_df)
     
-    with tab4:
+    with tab5:
         create_power_tab(filtered_df)
     
-    with tab5:
+    with tab6:
         create_speedups_tab(filtered_df)
     
-    with tab6:
+    with tab7:
         create_items_tab(filtered_df)
     
-    with tab7:
+    with tab8:
         create_troops_tab(filtered_df)
     
-    with tab8:
+    with tab9:
         create_buildings_tab(filtered_df)
     
-    with tab9:
+    with tab10:
         create_skins_tab(filtered_df)
     
-    with tab10:
+    with tab11:
         create_quests_research_tab(filtered_df)
     
-    with tab11:
+    with tab12:
         create_ceasefire_tab(filtered_df)
     
-    with tab12:
+    with tab13:
         create_map_tab(filtered_df)
     
-    with tab13:
+    with tab14:
         create_alliance_tab(filtered_df)
     
-    with tab14:
+    with tab15:
         create_pdd_tab(filtered_df)
 
 # Add cache clear button at bottom

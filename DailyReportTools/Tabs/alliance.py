@@ -145,10 +145,10 @@ def create_alliance_tab(filtered_df):
         
         # Create alliance selection dropdown with favorites at top
         # Render in fragment for instant selectbox updates
-        render_alliance_selection(alliance_names, current_stats)
+        render_alliance_selection(alliance_names, current_stats, filtered_df)
 
 @st.fragment
-def render_alliance_selection(alliance_names, current_stats):
+def render_alliance_selection(alliance_names, current_stats, filtered_df):
     """Fragment for alliance selection and display - only reruns when selectbox changes"""
     # Prepend favorites to the dropdown list with star prefix
     dropdown_options = []
@@ -239,6 +239,56 @@ def render_alliance_selection(alliance_names, current_stats):
                         format_number(current_data['total_resources'][resource]),
                         delta=format_change(daily_gains.get(resource, 0)) if daily_gains else None
                     )
+        
+        st.markdown("---")
+        
+        # Power over time chart
+        st.markdown("#### Power Over Time")
+        
+        # Calculate alliance power over time from filtered_df
+        power_over_time = []
+        for i in range(len(filtered_df)):
+            data = filtered_df.iloc[i]
+            if 'raw_player_data' in data and data['raw_player_data'] is not None:
+                df = data['raw_player_data']
+                if 'alliance_name' in df.columns and 'power' in df.columns:
+                    alliance_data = df[df['alliance_name'] == selected_alliance]
+                    if not alliance_data.empty:
+                        total_power = alliance_data['power'].fillna(0).sum()
+                        power_over_time.append({
+                            'date': data['date'],
+                            'power': total_power
+                        })
+        
+        if power_over_time:
+            # Sort by date
+            power_over_time = sorted(power_over_time, key=lambda x: x['date'])
+            
+            # Create DataFrame for plotting
+            power_df = pd.DataFrame(power_over_time)
+            power_df['formatted_date'] = power_df['date'].dt.strftime('%Y-%m-%d %H:%M')
+            
+            # Create line chart
+            fig = px.line(
+                power_df,
+                x='formatted_date',
+                y='power',
+                title=f'{selected_alliance} Power Over Time',
+                markers=True,
+                line_shape='linear'
+            )
+            fig.update_layout(
+                xaxis_title='Date',
+                yaxis_title='Total Power',
+                hovermode='x unified',
+                margin=dict(l=0, r=0, t=40, b=0)
+            )
+            fig.update_traces(line=dict(width=2), marker=dict(size=6))
+            fig.update_yaxes(tickformat=',')
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No historical power data available for this alliance")
         
         st.markdown("---")
         

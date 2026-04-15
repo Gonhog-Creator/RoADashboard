@@ -251,6 +251,11 @@ class PlayerDataAnalyzer:
         # Process effects
         effects_by_player = self.group_by_field(data.get('effect', []), 'player_id')
         
+        # Process battle data
+        battles = data.get('battle', [])
+        battles_by_attacker = self.group_by_field(battles, 'attacker_id')
+        battles_by_defender = self.group_by_field(battles, 'defender_id')
+        
         # Combine all data for each player
         comprehensive_data = []
         processed_count = 0
@@ -327,10 +332,47 @@ class PlayerDataAnalyzer:
                                     troop_counts[troop_type] += amount
                                     # Also update totals
                                     total_troop_amount += amount
-                                    # Add to defending troops list for metadata
-                                    defending_troops_list.append({'troop_id': troop_type, 'amount': amount})
                     except (json.JSONDecodeError, KeyError, ValueError):
                         pass
+            
+            # Process battle statistics
+            player_battles = battles_by_attacker.get(player_id, [])
+            total_attacks = len(player_battles)
+            attacks_won = 0
+            attacks_lost = 0
+            autowaver_attacks = 0
+            manual_attacks = 0
+            target_types = defaultdict(int)
+            
+            for battle in player_battles:
+                battle_state = battle.get('state', '')
+                if battle_state == 'attacker_won':
+                    attacks_won += 1
+                elif battle_state == 'defender_won':
+                    attacks_lost += 1
+                
+                # Parse metadata for attack details
+                battle_metadata = battle.get('metadata', '')
+                if battle_metadata:
+                    try:
+                        metadata_dict = json.loads(battle_metadata)
+                        if metadata_dict.get('from_auto_waver') == True:
+                            autowaver_attacks += 1
+                        else:
+                            manual_attacks += 1
+                        
+                        target_name = metadata_dict.get('target_name', 'unknown')
+                        if target_name:
+                            target_types[target_name] += 1
+                    except:
+                        pass
+            
+            player_data['total_attacks'] = total_attacks
+            player_data['attacks_won'] = attacks_won
+            player_data['attacks_lost'] = attacks_lost
+            player_data['autowaver_attacks'] = autowaver_attacks
+            player_data['manual_attacks'] = manual_attacks
+            player_data['target_types_json'] = json.dumps(dict(target_types))
             
             # Update total troop amount after adding defending troops
             player_data['total_troop_amount'] = total_troop_amount

@@ -145,6 +145,20 @@ def create_ceasefire_tab(filtered_df):
             lambda x: any(effect in x for effect in attack_prevention_effects)
         )
         
+        # Identify players by specific attack prevention type
+        player_data['has_ceasefire_treaty'] = player_data['active_effects'].fillna('').astype(str).apply(
+            lambda x: 'cease_fire_treaty' in x.lower()
+        )
+        player_data['has_armistice_agreement'] = player_data['active_effects'].fillna('').astype(str).apply(
+            lambda x: 'armistice_agreement' in x.lower()
+        )
+        player_data['has_truce'] = player_data['active_effects'].fillna('').astype(str).apply(
+            lambda x: 'truce' in x.lower()
+        )
+        player_data['has_server_protection'] = player_data['active_effects'].fillna('').astype(str).apply(
+            lambda x: 'server:prevent_attacks' in x.lower()
+        )
+        
         protected_players = player_data[player_data['has_protection']].copy()
         
         if protected_players.empty:
@@ -155,6 +169,12 @@ def create_ceasefire_tab(filtered_df):
         total_players = len(player_data)
         protected_count = len(protected_players)
         protected_percentage = (protected_count / total_players * 100) if total_players > 0 else 0
+        
+        # Calculate counts for each protection type
+        ceasefire_treaty_count = player_data['has_ceasefire_treaty'].sum()
+        armistice_agreement_count = player_data['has_armistice_agreement'].sum()
+        truce_count = player_data['has_truce'].sum()
+        server_protection_count = player_data['has_server_protection'].sum()
         
         # Calculate total protected resources
         resource_columns = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
@@ -293,14 +313,41 @@ def create_ceasefire_tab(filtered_df):
         # Player details table (simplified)
         st.markdown("#### Players with Attack Prevention")
         
-        # Display players with protection metric
-        st.metric(
-            "Players with Protection",
-            f"{protected_count:,} ({protected_percentage:.1f}%)" if total_players > 0 else f"{protected_count:,}"
-        )
+        # Display players with protection metric and breakdown by type
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric(
+                "Players with Protection",
+                f"{protected_count:,} ({protected_percentage:.1f}%)" if total_players > 0 else f"{protected_count:,}"
+            )
+        
+        with col2:
+            st.metric(
+                "Server Protection",
+                f"{server_protection_count:,}"
+            )
+        
+        with col3:
+            st.metric(
+                "Ceasefire Treaty",
+                f"{ceasefire_treaty_count:,}"
+            )
+        
+        with col4:
+            st.metric(
+                "Armistice Agreement",
+                f"{armistice_agreement_count:,}"
+            )
+        
+        with col5:
+            st.metric(
+                "Truce",
+                f"{truce_count:,}"
+            )
         
         # Prepare player data for display
-        display_columns = ['username', 'power', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food']
+        display_columns = ['username', 'power', 'resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food', 'created_at']
         available_columns = [col for col in display_columns if col in protected_players.columns]
         
         if available_columns:
@@ -317,7 +364,8 @@ def create_ceasefire_tab(filtered_df):
                 'resource_lumber': 'Lumber',
                 'resource_stone': 'Stone',
                 'resource_metal': 'Metal',
-                'resource_food': 'Food'
+                'resource_food': 'Food',
+                'created_at': 'Creation Date'
             }
             
             player_table = player_table.rename(columns=column_rename_map)
@@ -325,6 +373,10 @@ def create_ceasefire_tab(filtered_df):
             # Format power and resource columns
             if 'Power' in player_table.columns:
                 player_table['Power'] = player_table['Power'].apply(lambda x: f"{x:,}" if pd.notna(x) else '0')
+            
+            # Format creation date
+            if 'Creation Date' in player_table.columns:
+                player_table['Creation Date'] = pd.to_datetime(player_table['Creation Date'], errors='coerce').dt.strftime('%Y-%m-%d')
             
             for resource in ['Gold', 'Lumber', 'Stone', 'Metal', 'Food']:
                 if resource in player_table.columns:
@@ -356,6 +408,9 @@ def create_ceasefire_tab(filtered_df):
                                 'Amount': resource_data_filtered.values
                             })
                             
+                            # Format the amounts for display
+                            pie_df['Formatted Amount'] = pie_df['Amount'].apply(format_number)
+                            
                             fig_pie = px.pie(
                                 pie_df,
                                 values='Amount',
@@ -368,7 +423,14 @@ def create_ceasefire_tab(filtered_df):
                                 margin=dict(l=0, r=0, t=40, b=0),
                                 showlegend=False
                             )
-                            fig_pie.update_traces(textinfo='label+percent', textposition='inside')
+                            fig_pie.update_traces(
+                                textinfo='label+percent',
+                                textposition='inside',
+                                textfont_size=10,
+                                customdata=pie_df['Formatted Amount'],
+                                hovertemplate='<b>%{label}</b><br>Amount: %{customdata}<br>Percent: %{percent}<extra></extra>',
+                                text=pie_df['Formatted Amount'].tolist()
+                            )
                             st.plotly_chart(fig_pie, width='stretch')
                         else:
                             st.write(f"No {resource_display_names[resource]} data available")
