@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
+from collections import defaultdict
 
 def format_number(num):
     """Format numbers with abbreviations"""
@@ -231,7 +232,7 @@ def create_daily_report_tab(filtered_df):
         
         st.markdown("---")
         
-        # Top power gainers and alliance growth in top row
+        # Top power gainers and losers in left column, alliance growth in right column
         col1, col2 = st.columns(2)
         
         with col1:
@@ -245,6 +246,17 @@ def create_daily_report_tab(filtered_df):
                 top_gainers['power_change'] = top_gainers['power_change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
                 top_gainers.columns = ['Player', 'Prev', 'Curr', 'Change']
                 st.dataframe(top_gainers, width='stretch', hide_index=True, use_container_width=True)
+            
+            st.markdown("**📉 Top Power Losers**")
+            merged_df_sorted_losers = merged_df[merged_df['power_change'].notna()].sort_values('power_change', ascending=True)
+            top_losers = merged_df_sorted_losers.head(5)[['username', 'power_previous', 'power_current', 'power_change']].copy()
+            
+            if not top_losers.empty:
+                top_losers['power_previous'] = top_losers['power_previous'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                top_losers['power_current'] = top_losers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                top_losers['power_change'] = top_losers['power_change'].apply(lambda x: format_comma(x))
+                top_losers.columns = ['Player', 'Prev', 'Curr', 'Change']
+                st.dataframe(top_losers, width='stretch', hide_index=True, use_container_width=True)
         
         with col2:
             st.markdown("**🏰 Alliance Growth**")
@@ -264,27 +276,13 @@ def create_daily_report_tab(filtered_df):
                     })
                 
                 alliance_change_df = pd.DataFrame(alliance_changes)
-                alliance_change_df = alliance_change_df.sort_values('Change', ascending=False)
+                alliance_change_df = alliance_change_df.sort_values('Change', ascending=False).head(13)
                 if not alliance_change_df.empty:
                     alliance_change_df['Current'] = alliance_change_df['Current'].apply(lambda x: format_comma(x))
                     alliance_change_df['Change'] = alliance_change_df['Change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
-                    st.dataframe(alliance_change_df, width='stretch', hide_index=True, use_container_width=True)
+                    st.dataframe(alliance_change_df, width='stretch', hide_index=True, use_container_width=True, height=500)
             else:
                 st.info("Alliance data not available")
-        
-        st.markdown("---")
-        
-        # Top power losers
-        st.markdown("**📉 Top Power Losers**")
-        merged_df_sorted_losers = merged_df[merged_df['power_change'].notna()].sort_values('power_change', ascending=True)
-        top_losers = merged_df_sorted_losers.head(5)[['username', 'power_previous', 'power_current', 'power_change']].copy()
-        
-        if not top_losers.empty:
-            top_losers['power_previous'] = top_losers['power_previous'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
-            top_losers['power_current'] = top_losers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
-            top_losers['power_change'] = top_losers['power_change'].apply(lambda x: format_comma(x))
-            top_losers.columns = ['Player', 'Prev', 'Curr', 'Change']
-            st.dataframe(top_losers, width='stretch', hide_index=True, use_container_width=True)
     
     else:
         st.info("No data available for daily report analysis.")

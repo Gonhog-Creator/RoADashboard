@@ -10,6 +10,7 @@ import boto3
 import tarfile
 import tempfile
 import shutil
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +20,20 @@ from player_data_analyzer import PlayerDataAnalyzer
 
 class S3Automation:
     def __init__(self):
+        # Load secrets from secrets.json for local development
+        secrets = self.load_secrets()
+        if secrets:
+            if not os.environ.get('S3_ACCESS_KEY_ID'):
+                os.environ['S3_ACCESS_KEY_ID'] = secrets.get('S3_ACCESS_KEY_ID', '')
+            if not os.environ.get('S3_SECRET_ACCESS_KEY'):
+                os.environ['S3_SECRET_ACCESS_KEY'] = secrets.get('S3_SECRET_ACCESS_KEY', '')
+            if not os.environ.get('PAT_TOKEN'):
+                os.environ['PAT_TOKEN'] = secrets.get('PAT_TOKEN', '')
+            if not os.environ.get('GITHUB_OWNER'):
+                os.environ['GITHUB_OWNER'] = secrets.get('GITHUB_OWNER', '')
+            if not os.environ.get('GITHUB_REPO'):
+                os.environ['GITHUB_REPO'] = secrets.get('GITHUB_REPO', '')
+        
         # S3 Configuration
         self.s3_region = os.environ.get('S3_REGION', 'eu-west-par')
         self.s3_endpoint = os.environ.get('S3_ENDPOINT', 'https://s3.eu-west-par.io.cloud.ovh.net/')
@@ -40,6 +55,17 @@ class S3Automation:
         
         # Temporary directory for processing
         self.temp_dir = tempfile.mkdtemp()
+    
+    def load_secrets(self):
+        """Load secrets from secrets.json file for local development"""
+        secrets_path = os.path.join(os.path.dirname(__file__), 'secrets.json')
+        if os.path.exists(secrets_path):
+            try:
+                with open(secrets_path, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Error loading secrets from {secrets_path}: {e}")
+        return None
         
     def list_s3_files(self):
         """List all files in the S3 bucket"""
