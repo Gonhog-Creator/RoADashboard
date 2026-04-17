@@ -6,15 +6,436 @@ from plotly.subplots import make_subplots
 import json
 from collections import Counter
 
+@st.fragment
+def display_overview_metrics(stats, previous_stats=None):
+    """Display quest and research overview metrics"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'completed_quests_count' in stats:
+            current_total = stats['completed_quests_count']['total']
+            # Calculate day-over-day increase
+            if previous_stats and 'completed_quests_count' in previous_stats:
+                previous_total = previous_stats['completed_quests_count']['total']
+                increase = current_total - previous_total
+                if increase >= 0:
+                    delta = f"+{increase:,}"
+                else:
+                    delta = f"{increase:,}"
+            else:
+                delta = "N/A"
+            
+            st.metric(
+                "Completed Quests",
+                f"{current_total:,}",
+                delta
+            )
+    
+    with col2:
+        if 'completed_research_count' in stats:
+            current_total = stats['completed_research_count']['total']
+            # Calculate day-over-day increase
+            if previous_stats and 'completed_research_count' in previous_stats:
+                previous_total = previous_stats['completed_research_count']['total']
+                increase = current_total - previous_total
+                if increase >= 0:
+                    delta = f"+{increase:,}"
+                else:
+                    delta = f"{increase:,}"
+            else:
+                delta = "N/A"
+            
+            st.metric(
+                "Completed Research",
+                f"{current_total:,}",
+                delta
+            )
+
+@st.fragment
+def display_quest_completion(player_df):
+    """Display quest completion overview"""
+    if 'quest_metadata' in player_df.columns:
+        st.markdown("#### Quest Completion Overview")
+        
+        all_quests = {}
+        total_players = len(player_df)
+        
+        for _, player in player_df.iterrows():
+            quest_metadata = player.get('quest_metadata')
+            if pd.notna(quest_metadata) and quest_metadata:
+                try:
+                    if isinstance(quest_metadata, str):
+                        quests = quest_metadata.split('|')
+                        for quest in quests:
+                            if ':' in quest:
+                                parts = quest.split(':')
+                                if len(parts) >= 3:
+                                    quest_name = parts[0].strip().lower().replace('_', ' ')
+                                    quest_level = parts[1].strip()
+                                    quest_status = parts[2].strip()
+                                    
+                                    if quest_name not in all_quests:
+                                        all_quests[quest_name] = {'total': set(), 'completed': set(), 'in_progress': set()}
+                                    
+                                    player_id = player.get('account_id', '')
+                                    all_quests[quest_name]['total'].add(player_id)
+                                    if quest_status == 'completed':
+                                        all_quests[quest_name]['completed'].add(player_id)
+                                    elif quest_status == 'in_progress':
+                                        all_quests[quest_name]['in_progress'].add(player_id)
+                except:
+                    continue
+        
+        if all_quests:
+            quest_summary = []
+            for quest_name, player_sets in sorted(all_quests.items()):
+                total_players_with_quest = len(player_sets['total'])
+                completed_players = len(player_sets['completed'])
+                in_progress_players = len(player_sets['in_progress'])
+                completion_rate = (completed_players / total_players_with_quest * 100) if total_players_with_quest > 0 else 0
+                
+                quest_summary.append({
+                    'Quest': quest_name.title(),
+                    'Total Players': total_players_with_quest,
+                    'Completed': completed_players,
+                    'In Progress': in_progress_players,
+                    'Completion Rate': f"{completion_rate:.1f}%"
+                })
+            
+            if quest_summary:
+                summary_df = pd.DataFrame(quest_summary)
+                summary_df = summary_df.sort_values('Completion Rate', ascending=False)
+                st.dataframe(summary_df, width='stretch', hide_index=True, use_container_width=True)
+        else:
+            st.info("No quest information available in quest_metadata")
+    elif 'quest_details' in player_df.columns:
+        st.markdown("#### Quest Completion Overview")
+        
+        all_quests = {}
+        total_players = len(player_df)
+        
+        for _, player in player_df.iterrows():
+            quest_details = player.get('quest_details')
+            if pd.notna(quest_details) and quest_details:
+                try:
+                    if isinstance(quest_details, str):
+                        quests = quest_details.split('|')
+                        for quest in quests:
+                            if ':' in quest:
+                                parts = quest.split(':')
+                                if len(parts) >= 2:
+                                    quest_name = parts[0].strip().lower().replace('_', ' ')
+                                    status = parts[1].strip()
+                                    
+                                    if quest_name not in all_quests:
+                                        all_quests[quest_name] = {'total': set(), 'completed': set(), 'in_progress': set()}
+                                    
+                                    player_id = player.get('account_id', '')
+                                    all_quests[quest_name]['total'].add(player_id)
+                                    if status == 'completed':
+                                        all_quests[quest_name]['completed'].add(player_id)
+                                    elif status == 'in_progress':
+                                        all_quests[quest_name]['in_progress'].add(player_id)
+                except:
+                    continue
+        
+        if all_quests:
+            quest_summary = []
+            for quest_name, player_sets in sorted(all_quests.items()):
+                total_players_with_quest = len(player_sets['total'])
+                completed_players = len(player_sets['completed'])
+                in_progress_players = len(player_sets['in_progress'])
+                completion_rate = (completed_players / total_players_with_quest * 100) if total_players_with_quest > 0 else 0
+                
+                quest_summary.append({
+                    'Quest': quest_name.title(),
+                    'Total Players': total_players_with_quest,
+                    'Completed': completed_players,
+                    'In Progress': in_progress_players,
+                    'Completion Rate': f"{completion_rate:.1f}%"
+                })
+            
+            summary_df = pd.DataFrame(quest_summary)
+            summary_df = summary_df.sort_values('Completion Rate', ascending=False)
+            st.dataframe(summary_df, width='stretch', hide_index=True, use_container_width=True)
+        else:
+            st.info("No quest information available")
+
+@st.fragment
+def display_research_level_distribution(player_df):
+    """Display research level distribution"""
+    if 'research_metadata' in player_df.columns:
+        st.markdown("#### Research Level Distribution")
+        
+        all_research = {}
+        total_players = len(player_df)
+        
+        for _, player in player_df.iterrows():
+            research_metadata = player.get('research_metadata')
+            if pd.notna(research_metadata) and research_metadata:
+                try:
+                    if isinstance(research_metadata, str):
+                        research_items = research_metadata.split('|')
+                        for research in research_items:
+                            if ':' in research:
+                                parts = research.split(':')
+                                if len(parts) >= 2:
+                                    research_name = parts[0].strip().lower().replace('_', ' ')
+                                    level = parts[1].strip()
+                                    
+                                    try:
+                                        level = int(level)
+                                    except:
+                                        level = 0
+                                    
+                                    if research_name not in all_research:
+                                        all_research[research_name] = {}
+                                    
+                                    if level not in all_research[research_name]:
+                                        all_research[research_name][level] = 0
+                                    
+                                    all_research[research_name][level] += 1
+                except:
+                    continue
+        
+        if all_research:
+            research_types = sorted(all_research.keys())
+            research_display_names = [name.title() for name in research_types]
+            
+            selected_research = st.radio(
+                "Select a research type to view level distribution:",
+                options=research_display_names,
+                index=0,
+                horizontal=True
+            )
+            
+            if selected_research:
+                selected_key = selected_research.lower().replace(' ', ' ')
+                level_data = all_research[selected_key]
+                sorted_levels = sorted(level_data.keys())
+                
+                fig_research = px.bar(
+                    x=sorted_levels,
+                    y=[level_data[level] for level in sorted_levels],
+                    title=f"{selected_research} Level Distribution",
+                    labels={'x': 'Level', 'y': 'Player Count'}
+                )
+                fig_research.update_layout(
+                    xaxis_title="Level",
+                    yaxis_title="Player Count",
+                    height=400
+                )
+                st.plotly_chart(fig_research, width='stretch')
+                
+                st.markdown(f"**Summary for {selected_research}**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Players", sum(level_data.values()))
+                with col2:
+                    avg_level = sum(level * count for level, count in level_data.items()) / sum(level_data.values()) if level_data else 0
+                    st.metric("Average Level", f"{avg_level:.1f}")
+        else:
+            st.info("No research information available in research_metadata")
+    elif 'research_details' in player_df.columns:
+        st.markdown("#### Research Level Distribution")
+        
+        all_research = {}
+        total_players = len(player_df)
+        
+        for _, player in player_df.iterrows():
+            research_details = player.get('research_details')
+            if pd.notna(research_details) and research_details:
+                try:
+                    if isinstance(research_details, str):
+                        research_items = research_details.split('|')
+                        for research in research_items:
+                            if ':' in research:
+                                parts = research.split(':')
+                                if len(parts) >= 2:
+                                    research_name = parts[0].strip().lower().replace('_', ' ')
+                                    level = parts[1].strip() if len(parts) >= 3 else 0
+                                    
+                                    try:
+                                        level = int(level)
+                                    except:
+                                        level = 0
+                                    
+                                    if research_name not in all_research:
+                                        all_research[research_name] = {}
+                                    
+                                    if level not in all_research[research_name]:
+                                        all_research[research_name][level] = 0
+                                    
+                                    all_research[research_name][level] += 1
+                except:
+                    continue
+        
+        if all_research:
+            research_types = sorted(all_research.keys())
+            research_display_names = [name.title() for name in research_types]
+            
+            selected_research = st.radio(
+                "Select a research type to view level distribution:",
+                options=research_display_names,
+                index=0,
+                horizontal=True
+            )
+            
+            if selected_research:
+                selected_key = selected_research.lower().replace(' ', ' ')
+                level_data = all_research[selected_key]
+                sorted_levels = sorted(level_data.keys())
+                
+                fig_research = px.bar(
+                    x=sorted_levels,
+                    y=[level_data[level] for level in sorted_levels],
+                    title=f"{selected_research} Level Distribution",
+                    labels={'x': 'Level', 'y': 'Player Count'}
+                )
+                fig_research.update_layout(
+                    xaxis_title="Level",
+                    yaxis_title="Player Count",
+                    height=400
+                )
+                st.plotly_chart(fig_research, width='stretch')
+                
+                st.markdown(f"**Summary for {selected_research}**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Players", sum(level_data.values()))
+                with col2:
+                    avg_level = sum(level * count for level, count in level_data.items()) / sum(level_data.values()) if level_data else 0
+                    st.metric("Average Level", f"{avg_level:.1f}")
+        else:
+            st.info("No research information available")
+
+@st.fragment
+def display_progress_correlation(player_df, available_columns):
+    """Display progress vs power correlation"""
+    if 'power' in player_df.columns and ('completed_quests_count' in available_columns or 'completed_research_count' in available_columns):
+        st.markdown("#### Progress vs Power Correlation")
+        
+        # Alliance selection with inverted behavior
+        if 'alliance_name' in player_df.columns:
+            all_alliances = sorted([x for x in player_df['alliance_name'].unique() if pd.notna(x) and isinstance(x, str)])
+            selected_alliance = st.selectbox("Filter by Alliance (select to show only this alliance):", ["All"] + all_alliances)
+            
+            if selected_alliance != "All":
+                # Inverted selection - show only selected alliance
+                player_df = player_df[player_df['alliance_name'] == selected_alliance]
+        
+        # Log scale toggle
+        use_log_scale = st.checkbox("Use Log Scale for Y-Axis", value=False)
+        
+        # Calculate total research levels for each player
+        if 'research_metadata' in player_df.columns:
+            player_df = player_df.copy()
+            total_research_levels = []
+            for _, player in player_df.iterrows():
+                research_metadata = player.get('research_metadata')
+                total_level = 0
+                if pd.notna(research_metadata) and research_metadata:
+                    try:
+                        if isinstance(research_metadata, str):
+                            research_items = research_metadata.split('|')
+                            for research in research_items:
+                                if ':' in research:
+                                    parts = research.split(':')
+                                    if len(parts) >= 2:
+                                        level = parts[1].strip()
+                                        try:
+                                            total_level += int(level)
+                                        except:
+                                            pass
+                    except:
+                        pass
+                total_research_levels.append(total_level)
+            player_df['total_research_levels'] = total_research_levels
+        
+        # Format power values to K,M,B,T format
+        def format_power(value):
+            if pd.isna(value):
+                return '0'
+            value = float(value)
+            if value >= 1e12:
+                return f"{value/1e12:.0f}T"
+            elif value >= 1e9:
+                return f"{value/1e9:.0f}B"
+            elif value >= 1e6:
+                return f"{value/1e6:.0f}M"
+            elif value >= 1e3:
+                return f"{value/1e3:.0f}K"
+            else:
+                return f"{value:.0f}"
+        
+        player_df = player_df.copy()
+        player_df['power_formatted'] = player_df['power'].apply(format_power)
+        
+        if 'completed_quests_count' in available_columns:
+            fig_quests_power = px.scatter(
+                player_df,
+                x='completed_quests_count',
+                y='power',
+                title='Completed Quests vs Power',
+                color='alliance_name' if 'alliance_name' in player_df.columns else None,
+                color_discrete_sequence=px.colors.qualitative.Plotly,
+                labels={'alliance_name': 'Alliance', 'completed_quests_count': 'Completed Quests', 'power': 'Power'},
+                hover_data=['username', 'power_formatted'] if 'username' in player_df.columns else ['account_id', 'power_formatted'],
+                custom_data=['username', 'power_formatted'] if 'username' in player_df.columns else ['account_id', 'power_formatted']
+            )
+            if 'username' in player_df.columns:
+                fig_quests_power.update_traces(
+                    hovertemplate='<b>%{customdata[0]}</b><br>Completed Quests: %{x}<br>Power: %{customdata[1]}<extra></extra>'
+                )
+            else:
+                fig_quests_power.update_traces(
+                    hovertemplate='<b>Account ID: %{customdata[0]}</b><br>Completed Quests: %{x}<br>Power: %{customdata[1]}<extra></extra>'
+                )
+            fig_quests_power.update_layout(height=400, yaxis_type='log' if use_log_scale else 'linear')
+            st.plotly_chart(fig_quests_power, width='stretch')
+        
+        if 'completed_research_count' in available_columns:
+            # Use total research levels instead of completed_research_count
+            if 'total_research_levels' in player_df.columns:
+                x_axis = 'total_research_levels'
+                x_title = 'Total Research Levels'
+            else:
+                x_axis = 'completed_research_count'
+                x_title = 'Completed Research Count'
+            
+            fig_research_power = px.scatter(
+                player_df,
+                x=x_axis,
+                y='power',
+                title='Completed Research vs Power',
+                color='alliance_name' if 'alliance_name' in player_df.columns else None,
+                color_discrete_sequence=px.colors.qualitative.Plotly,
+                labels={'alliance_name': 'Alliance', x_axis: x_title, 'power': 'Power'},
+                hover_data=['username', 'power_formatted'] if 'username' in player_df.columns else ['account_id', 'power_formatted'],
+                custom_data=['username', 'power_formatted'] if 'username' in player_df.columns else ['account_id', 'power_formatted']
+            )
+            if 'username' in player_df.columns:
+                fig_research_power.update_traces(
+                    hovertemplate='<b>%{customdata[0]}</b><br>' + x_title + ': %{x}<br>Power: %{customdata[1]}<extra></extra>'
+                )
+            else:
+                fig_research_power.update_traces(
+                    hovertemplate='<b>Account ID: %{customdata[0]}</b><br>' + x_title + ': %{x}<br>Power: %{customdata[1]}<extra></extra>'
+                )
+            fig_research_power.update_layout(xaxis_title=x_title, height=400, yaxis_type='log' if use_log_scale else 'linear')
+            st.plotly_chart(fig_research_power, width='stretch')
+    else:
+        st.info("\u26a0\ufe0f No quests or research data available. This feature requires the comprehensive CSV format with quest and research information.")
+
+@st.fragment
 def create_quests_research_tab(filtered_df):
     """Create the Quests & Research tab with completion analytics"""
     
     if not filtered_df.empty:
         st.markdown("### Quests Quests & Research Analytics")
         
-        # Find the latest data with quests information (comprehensive CSV)
         latest_quests_data = None
-        for i in range(len(filtered_df) - 1, -1, -1):  # Iterate backwards to find latest with quest data
+        for i in range(len(filtered_df) - 1, -1, -1):
             data = filtered_df.iloc[i]
             if 'raw_player_data' in data and data['raw_player_data'] is not None:
                 latest_quests_data = data
@@ -29,327 +450,50 @@ def create_quests_research_tab(filtered_df):
         if 'raw_player_data' in latest_data:
             player_df = latest_data['raw_player_data']
             
-            # Handle case where raw_player_data might be converted to float by pandas
             available_columns = []
             if player_df is None:
                 st.warning("Raw player data is None. This feature requires the comprehensive CSV format.")
             elif isinstance(player_df, (int, float)) or not hasattr(player_df, 'columns'):
                 st.warning(f"Player data format error in quests tab: expected DataFrame but got {type(player_df)}. Value: {player_df}")
             else:
-                # Check if quests/research columns exist
                 quest_columns = ['completed_quests_count', 'completed_research_count', 'in_progress_quests_count']
                 available_columns = [col for col in quest_columns if col in player_df.columns]
             
             if available_columns:
-                    st.markdown("#### Quest & Research Overview")
-                    
-                    # Calculate overall statistics
-                    total_players = len(player_df)
-                    stats = {}
-                    
-                    for col in available_columns:
-                        stats[col] = {
-                            'total': player_df[col].fillna(0).sum(),
-                            'average': player_df[col].fillna(0).mean(),
-                            'max': player_df[col].fillna(0).max(),
-                            'players_with_progress': (player_df[col] > 0).sum()
-                        }
+                st.markdown("#### Quest & Research Overview")
                 
-                # Display overview metrics
-                    if 'completed_quests_count' in stats:
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric(
-                                "Completed Quests",
-                                f"{stats['completed_quests_count']['total']:,}",
-                                f"{stats['completed_quests_count']['average']:.1f} avg"
-                            )
-                        
-                        with col2:
-                            completion_rate = (stats['completed_quests_count']['players_with_progress'] / total_players * 100) if total_players > 0 else 0
-                            st.metric(
-                                "Players with Quests",
-                                f"{stats['completed_quests_count']['players_with_progress']:,}",
-                                f"{completion_rate:.1f}%"
-                            )
-                        
-                        with col3:
-                            st.metric(
-                                "Most Quests",
-                                f"{stats['completed_quests_count']['max']:,}",
-                                "Single player"
-                            )
-                    
-                    if 'completed_research_count' in stats:
-                        col4, col5, col6 = st.columns(3)
-                        
-                        with col4:
-                            st.metric(
-                                "Completed Research",
-                                f"{stats['completed_research_count']['total']:,}",
-                                f"{stats['completed_research_count']['average']:.1f} avg"
-                            )
-                        
-                        with col5:
-                            research_rate = (stats['completed_research_count']['players_with_progress'] / total_players * 100) if total_players > 0 else 0
-                            st.metric(
-                                "Players with Research",
-                                f"{stats['completed_research_count']['players_with_progress']:,}",
-                                f"{research_rate:.1f}%"
-                            )
-                        
-                        with col6:
-                            st.metric(
-                                "Most Research",
-                                f"{stats['completed_research_count']['max']:,}",
-                                "Single player"
-                            )
-                    
-                    if 'in_progress_quests_count' in stats:
-                        col7, col8 = st.columns(2)
-                        
-                        with col7:
-                            st.metric(
-                                "In Progress Quests",
-                                f"{stats['in_progress_quests_count']['total']:,}",
-                                f"{stats['in_progress_quests_count']['average']:.1f} avg"
-                            )
-                        
-                        with col8:
-                            progress_rate = (stats['in_progress_quests_count']['players_with_progress'] / total_players * 100) if total_players > 0 else 0
-                            st.metric(
-                                "Active Questers",
-                                f"{stats['in_progress_quests_count']['players_with_progress']:,}",
-                                f"{progress_rate:.1f}%"
-                            )
-                    
-                    # Distribution charts
-                    st.markdown("#### Quest & Research Distributions")
-                    
-                    # Create distribution charts
-                    chart_cols = st.columns(len(available_columns))
-                    
-                    for i, col in enumerate(available_columns):
-                        with chart_cols[i]:
-                            # Create histogram for this metric
-                            fig = px.histogram(
-                                player_df,
-                                x=col,
-                                title=col.replace('_', ' ').title(),
-                                nbins=20,
-                                color_discrete_sequence=['lightblue']
-                            )
-                            fig.update_layout(height=300)
-                            st.plotly_chart(fig, width='stretch')
+                total_players = len(player_df)
+                stats = {}
                 
-                # Player progress analysis
-                    st.markdown("#### Player Progress Analysis")
-                    
-                    # Create combined progress dataframe
-                    progress_data = []
-                    for _, player in player_df.iterrows():
-                        row_data = {
-                            'Account ID': player['account_id'][:8] + "..." if len(player['account_id']) > 8 else player['account_id'],
-                            'Alliance': player.get('alliance_name', 'None'),
-                            'Power': player.get('power', 0)
-                        }
-                        
-                        for col in available_columns:
-                            row_data[col.replace('_count', '').title()] = player.get(col, 0)
-                        
-                        progress_data.append(row_data)
-                    
-                    progress_df = pd.DataFrame(progress_data)
-                    
-                    if not progress_df.empty:
-                        # Sort by total progress
-                        if 'completed_quests_count' in available_columns and 'completed_research_count' in available_columns:
-                            # Check if the expected columns exist
-                            quests_col = 'CompletedQuests'
-                            research_col = 'CompletedResearch'
-                            if quests_col in progress_df.columns and research_col in progress_df.columns:
-                                progress_df['Total Progress'] = progress_df[quests_col] + progress_df[research_col]
-                                progress_df = progress_df.sort_values('Total Progress', ascending=False)
-                        
-                        # Display top players
-                        st.dataframe(progress_df.head(20), width='stretch')
-                    
-                    # Detailed quest analysis (if quest details are available)
-                    if 'quest_details' in player_df.columns:
-                        st.markdown("#### Detailed Quest Analysis")
-                        
-                        # Process quest details
-                        all_quests = []
-                        quest_status_counts = {}
-                        
-                        for _, player in player_df.iterrows():
-                            quest_details = player.get('quest_details')
-                            if pd.notna(quest_details) and quest_details:
-                                try:
-                                    # Parse quest details (assuming format: quest_name:status:progress)
-                                    if isinstance(quest_details, str):
-                                        quests = quest_details.split('|')
-                                        for quest in quests:
-                                            if ':' in quest:
-                                                parts = quest.split(':')
-                                                if len(parts) >= 2:
-                                                    quest_name = parts[0].strip()
-                                                    status = parts[1].strip()
-                                                    
-                                                    all_quests.append({
-                                                        'Account ID': player['account_id'][:8] + "...",
-                                                        'Quest': quest_name,
-                                                        'Status': status,
-                                                        'Alliance': player.get('alliance_name', 'None')
-                                                    })
-                                                    
-                                                    # Count quest statuses
-                                                    if quest_name not in quest_status_counts:
-                                                        quest_status_counts[quest_name] = {'completed': 0, 'in_progress': 0}
-                                                    quest_status_counts[quest_name][status] = quest_status_counts[quest_name].get(status, 0) + 1
-                                except:
-                                    continue
-                            
-                        if all_quests:
-                            quests_df = pd.DataFrame(all_quests)
-                            
-                            # Quest status distribution
-                            st.markdown("##### \ud83d\udccb Quest Status Overview")
-                            
-                            # Create quest completion summary
-                            quest_summary = []
-                            for quest_name, status_counts in quest_status_counts.items():
-                                total = sum(status_counts.values())
-                                completed = status_counts.get('completed', 0)
-                                completion_rate = (completed / total * 100) if total > 0 else 0
-                                
-                                quest_summary.append({
-                                    'Quest': quest_name,
-                                    'Total Players': total,
-                                    'Completed': completed,
-                                    'In Progress': status_counts.get('in_progress', 0),
-                                    'Completion Rate': f"{completion_rate:.1f}%"
-                                })
-                            
-                            if quest_summary:
-                                summary_df = pd.DataFrame(quest_summary)
-                                summary_df = summary_df.sort_values('Completion Rate', ascending=False)
-                                st.dataframe(summary_df, width='stretch')
-                            
-                            # Individual quest analysis
-                            selected_quest = st.selectbox(
-                                "Select a quest for detailed analysis:",
-                            options=list(quest_status_counts.keys()),
-                                index=0
-                            )
-                            
-                            if selected_quest:
-                                quest_players = quests_df[quests_df['Quest'] == selected_quest]
-                                
-                                st.markdown(f"##### \ud83d\udc65 Players - {selected_quest}")
-                                st.dataframe(quest_players, width='stretch')
-                                
-                                # Status distribution for this quest
-                                status_counts = quest_status_counts[selected_quest]
-                                fig_quest = px.pie(
-                                    values=list(status_counts.values()),
-                                    names=list(status_counts.keys()),
-                                    title=f"{selected_quest} Status Distribution"
-                                )
-                                st.plotly_chart(fig_quest, width='stretch')
-                        else:
-                            st.info("No detailed quest information available")
-                    
-                    # Research analysis (if research details are available)
-                    if 'research_details' in player_df.columns:
-                        st.markdown("#### \ud83d\udd2c Detailed Research Analysis")
-                        
-                        # Similar processing for research details
-                        all_research = []
-                        research_status_counts = {}
-                        
-                        for _, player in player_df.iterrows():
-                            research_details = player.get('research_details')
-                            if pd.notna(research_details) and research_details:
-                                try:
-                                    if isinstance(research_details, str):
-                                        research_items = research_details.split('|')
-                                        for research in research_items:
-                                            if ':' in research:
-                                                parts = research.split(':')
-                                                if len(parts) >= 2:
-                                                    research_name = parts[0].strip()
-                                                    status = parts[1].strip()
-                                                    
-                                                    all_research.append({
-                                                        'Account ID': player['account_id'][:8] + "...",
-                                                        'Research': research_name,
-                                                        'Status': status,
-                                                        'Alliance': player.get('alliance_name', 'None')
-                                                    })
-                                                    
-                                                    if research_name not in research_status_counts:
-                                                        research_status_counts[research_name] = {'completed': 0, 'in_progress': 0}
-                                                    research_status_counts[research_name][status] = research_status_counts[research_name].get(status, 0) + 1
-                                except:
-                                    continue
-                            
-                        if all_research:
-                            research_df = pd.DataFrame(all_research)
-                            
-                            # Research completion summary
-                            research_summary = []
-                            for research_name, status_counts in research_status_counts.items():
-                                total = sum(status_counts.values())
-                                completed = status_counts.get('completed', 0)
-                                completion_rate = (completed / total * 100) if total > 0 else 0
-                                
-                                research_summary.append({
-                                    'Research': research_name,
-                                    'Total Players': total,
-                                    'Completed': completed,
-                                    'In Progress': status_counts.get('in_progress', 0),
-                                    'Completion Rate': f"{completion_rate:.1f}%"
-                                })
-                            
-                            if research_summary:
-                                summary_df = pd.DataFrame(research_summary)
-                                summary_df = summary_df.sort_values('Completion Rate', ascending=False)
-                                st.dataframe(summary_df, width='stretch')
-                        else:
-                            st.info("No detailed research information available")
-                    
-                    # Progress correlation with power
-                    if 'power' in player_df.columns and ('completed_quests_count' in available_columns or 'completed_research_count' in available_columns):
-                        st.markdown("#### Progress vs Power Correlation")
-                        
-                        # Create scatter plots
-                        if 'completed_quests_count' in available_columns:
-                            fig_quests_power = px.scatter(
-                                player_df,
-                                x='completed_quests_count',
-                                y='power',
-                                title='Completed Quests vs Power',
-                                color='alliance_name' if 'alliance_name' in player_df.columns else None,
-                                hover_data=['account_id']
-                            )
-                            fig_quests_power.update_layout(height=400)
-                            st.plotly_chart(fig_quests_power, width='stretch')
-                        
-                        if 'completed_research_count' in available_columns:
-                            fig_research_power = px.scatter(
-                                player_df,
-                                x='completed_research_count',
-                                y='power',
-                                title='Completed Research vs Power',
-                                color='alliance_name' if 'alliance_name' in player_df.columns else None,
-                                hover_data=['account_id']
-                            )
-                            fig_research_power.update_layout(height=400)
-                            st.plotly_chart(fig_research_power, width='stretch')
-                    else:
-                        st.info("\u26a0\ufe0f No quests or research data available. This feature requires the comprehensive CSV format with quest and research information.")
+                for col in available_columns:
+                    stats[col] = {
+                        'total': player_df[col].fillna(0).sum(),
+                        'average': player_df[col].fillna(0).mean(),
+                        'max': player_df[col].fillna(0).max(),
+                        'players_with_progress': (player_df[col] > 0).sum()
+                    }
+                
+                # Get previous day's stats for day-over-day comparison
+                previous_stats = None
+                for i in range(len(filtered_df) - 2, -1, -1):
+                    data = filtered_df.iloc[i]
+                    if 'raw_player_data' in data and data['raw_player_data'] is not None:
+                        prev_player_df = data['raw_player_data']
+                        if isinstance(prev_player_df, pd.DataFrame) and not prev_player_df.empty:
+                            prev_stats = {}
+                            for col in available_columns:
+                                if col in prev_player_df.columns:
+                                    prev_stats[col] = {
+                                        'total': prev_player_df[col].fillna(0).sum()
+                                    }
+                            if prev_stats:
+                                previous_stats = prev_stats
+                                break
+                
+                display_overview_metrics(stats, previous_stats)
+                display_quest_completion(player_df)
+                display_research_level_distribution(player_df)
+                display_progress_correlation(player_df, available_columns)
             
         else:
             st.info("\u26a0\ufe0f No detailed player data available. This feature requires the comprehensive CSV format.")

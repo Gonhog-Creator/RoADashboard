@@ -125,7 +125,7 @@ def create_skins_tab(filtered_df):
                     if skins_data:
                         # Create skin tiles with images
                         skin_image_map = {
-                            'City Alpha All': 'skin_city_alpha_all-.webp',
+                            'City Alpha All': 'skin_city_alpha_all.webp',
                             'City Alpha Level 9': 'skin_city_alpha_lvl9.webp',
                             'City Founders': 'skin_city_founders.webp',
                             'City Top 1 PvP Challenge': 'skin_city_top1_challenge_pvp_1.webp',

@@ -491,25 +491,123 @@ else:
                             chart_dates.append(today)
                             chart_counts.append(len(sorted_dates))
                         
+                        # Calculate active players for historical data points
+                        active_player_counts = []
+                        active_percentages = []
+                        
+                        # Try to get active player data from historical comprehensive files
+                        for chart_date in chart_dates:
+                            # Find the closest data point in filtered_df
+                            closest_row = None
+                            min_diff = float('inf')
+                            for _, row in filtered_df.iterrows():
+                                if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                                    diff = abs(row['date'] - chart_date).total_seconds()
+                                    if diff < min_diff:
+                                        min_diff = diff
+                                        closest_row = row
+                            
+                            if closest_row is not None and min_diff < 86400:  # Within 1 day
+                                # Calculate active players for this data point (7-day window)
+                                current_df = closest_row['raw_player_data']
+                                if len(filtered_df) > 1:
+                                    # Find data point from 7 days ago
+                                    target_date = closest_row['date'] - pd.Timedelta(days=7)
+                                    prev_row = None
+                                    prev_min_diff = float('inf')
+                                    for _, row in filtered_df.iterrows():
+                                        if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                                            if row['date'] < closest_row['date']:
+                                                diff = abs(row['date'] - target_date).total_seconds()
+                                                if diff < prev_min_diff:
+                                                    prev_min_diff = diff
+                                                    prev_row = row
+                                    
+                                    if prev_row is not None:
+                                        prev_df = prev_row['raw_player_data']
+                                        
+                                        # Merge current and 7-day-ago data to find active players
+                                        merged_df = pd.merge(
+                                            current_df[['username', 'power', 'total_troops']],
+                                            prev_df[['username', 'power', 'total_troops']],
+                                            on='username',
+                                            suffixes=('_current', '_previous'),
+                                            how='outer'
+                                        )
+                                        merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
+                                        merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
+                                        
+                                        active_players = merged_df[
+                                            (merged_df['power_change'] != 0) | 
+                                            (merged_df['troop_change'] != 0) |
+                                            (merged_df['power_current'].notna() & merged_df['power_previous'].isna())
+                                        ]
+                                        active_count = len(active_players)
+                                        total_count = len(current_df)
+                                        active_percentage = (active_count / total_count * 100) if total_count > 0 else 0
+                                        active_player_counts.append(active_count)
+                                        active_percentages.append(active_percentage)
+                                    else:
+                                        # No 7-day-ago data, estimate
+                                        active_player_counts.append(None)
+                                        active_percentages.append(None)
+                                else:
+                                    active_player_counts.append(None)
+                                    active_percentages.append(None)
+                            else:
+                                active_player_counts.append(None)
+                                active_percentages.append(None)
+                        
+                        # Calculate average active percentage from available data
+                        available_percentages = [p for p in active_percentages if p is not None]
+                        if available_percentages:
+                            avg_active_percentage = sum(available_percentages) / len(available_percentages)
+                        else:
+                            avg_active_percentage = 30.0  # Default to 30% if no data
+                        
+                        # Fill in missing active player counts using average percentage
+                        for i, (active_count, active_pct, total_count) in enumerate(zip(active_player_counts, active_percentages, chart_counts)):
+                            if active_count is None:
+                                estimated_active = int(total_count * (avg_active_percentage / 100))
+                                active_player_counts[i] = estimated_active
+                                active_percentages[i] = avg_active_percentage
+                        
                         # Create dataframe for the chart
                         chart_df = pd.DataFrame({
                             'date': chart_dates,
-                            'total_players': chart_counts
+                            'total_players': chart_counts,
+                            'active_players': active_player_counts
                         })
                         
-                        # Create smooth line chart without markers for cleaner look
+                        # Create line chart with both total and active players
                         fig_players = px.line(
                             chart_df, 
                             x='date', 
-                            y='total_players',
-                            title='Total Players Over Time',
-                            markers=False  # Remove markers for smoother line
+                            y=['total_players', 'active_players'],
+                            title='Player Count Over Time',
+                            markers=False,
+                            labels={'value': 'Players', 'variable': 'Type'}
                         )
                         fig_players.update_layout(
                             xaxis_title="Date",
-                            yaxis_title="Total Players",
-                            hovermode='x unified'
+                            yaxis_title="Players",
+                            hovermode='x unified',
+                            legend=dict(
+                                yanchor="top",
+                                y=0.99,
+                                xanchor="left",
+                                x=0.01
+                            )
                         )
+                        fig_players.update_traces(
+                            line=dict(width=2),
+                            selector=dict(name='total_players')
+                        )
+                        fig_players.update_traces(
+                            line=dict(width=2, dash='dash'),
+                            selector=dict(name='active_players')
+                        )
+                        fig_players.update_yaxes(tickformat=',')
                         st.plotly_chart(fig_players, width='stretch')
                     else:
                         st.warning("No valid player creation dates found in the latest comprehensive data file")

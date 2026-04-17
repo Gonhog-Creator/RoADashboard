@@ -66,23 +66,73 @@ def create_daily_report_tab(filtered_df):
             st.metric("Players", format_comma(total_players))
         
         with col3:
-            merged_df = pd.merge(
-                current_df[['username', 'power', 'total_troops']],
-                previous_df[['username', 'power', 'total_troops']],
-                on='username',
-                suffixes=('_current', '_previous'),
-                how='outer'
-            )
-            merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
-            merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
-            active_players = merged_df[
-                (merged_df['power_change'] != 0) | 
-                (merged_df['troop_change'] != 0) |
-                (merged_df['power_current'].notna() & merged_df['power_previous'].isna())
-            ]
+            # Calculate active players using 7-day window
+            target_date = current_data['date'] - pd.Timedelta(days=7)
+            week_ago_row = None
+            week_ago_min_diff = float('inf')
+            for data in comprehensive_data_list:
+                if data['date'] < current_data['date']:
+                    diff = abs(data['date'] - target_date).total_seconds()
+                    if diff < week_ago_min_diff:
+                        week_ago_min_diff = diff
+                        week_ago_row = data
+            
+            if week_ago_row is not None:
+                week_ago_df = week_ago_row['raw_player_data']
+                merged_df = pd.merge(
+                    current_df[['username', 'power', 'total_troops']],
+                    week_ago_df[['username', 'power', 'total_troops']],
+                    on='username',
+                    suffixes=('_current', '_previous'),
+                    how='outer'
+                )
+                merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
+                merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
+                active_players = merged_df[
+                    (merged_df['power_change'] != 0) | 
+                    (merged_df['troop_change'] != 0) |
+                    (merged_df['power_current'].notna() & merged_df['power_previous'].isna())
+                ]
+            else:
+                # Fall back to 1-day window if no 7-day data
+                merged_df = pd.merge(
+                    current_df[['username', 'power', 'total_troops']],
+                    previous_df[['username', 'power', 'total_troops']],
+                    on='username',
+                    suffixes=('_current', '_previous'),
+                    how='outer'
+                )
+                merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
+                merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
+                active_players = merged_df[
+                    (merged_df['power_change'] != 0) | 
+                    (merged_df['troop_change'] != 0) |
+                    (merged_df['power_current'].notna() & merged_df['power_previous'].isna())
+                ]
+            
             active_count = len(active_players)
             active_percentage = (active_count / total_players * 100) if total_players > 0 else 0
-            st.metric("Active", f"{format_comma(active_count)} ({active_percentage:.1f}%)")
+            
+            # Add tooltip explanation
+            st.markdown("""
+            <style>
+            .tooltip-icon {
+                cursor: help;
+                color: #888;
+                font-size: 16px;
+                margin-left: 5px;
+            }
+            </style>
+            <script>
+            function showTooltip() {
+                alert('Active players are those with power or troop changes in the last 7 days');
+            }
+            </script>
+            """, unsafe_allow_html=True)
+            
+            col_with_tooltip = st.container()
+            with col_with_tooltip:
+                st.metric("Active", f"{format_comma(active_count)} ({active_percentage:.1f}%)", help="Players with power or troop changes in the last 7 days")
         
         with col4:
             st.metric("Inactive", format_comma(total_players - active_count))
@@ -195,24 +245,46 @@ def create_daily_report_tab(filtered_df):
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Attacks", format_comma(current_total_attacks), delta=f"{attack_change:+,}")
+                st.metric("Daily Attacks", format_comma(attack_change))
             with col2:
-                st.metric("Autowaver", format_comma(current_autowaver), delta=f"{autowaver_change:+,}")
+                st.metric("Daily Autowaver", format_comma(autowaver_change))
             with col3:
-                st.metric("Manual", format_comma(current_manual), delta=f"{manual_change:+,}")
+                st.metric("Daily Manual", format_comma(manual_change))
             
-            # Top attackers
-            current_top_attackers = current_df[['username', 'total_attacks', 'autowaver_attacks', 'manual_attacks']].copy()
-            current_top_attackers = current_top_attackers.sort_values('total_attacks', ascending=False).head(10)
-            if not current_top_attackers.empty:
-                current_top_attackers['total_attacks'] = current_top_attackers['total_attacks'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
-                current_top_attackers['autowaver_attacks'] = current_top_attackers['autowaver_attacks'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
-                current_top_attackers['manual_attacks'] = current_top_attackers['manual_attacks'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
-                current_top_attackers.columns = ['Player', 'Total', 'Autowaver', 'Manual']
-                st.dataframe(current_top_attackers, width='stretch', hide_index=True, use_container_width=True)
+            # Top attackers (daily changes)
+            # Merge current and previous data to calculate daily changes
+            merged_df = current_df[['username', 'total_attacks', 'autowaver_attacks', 'manual_attacks']].merge(
+                previous_df[['username', 'total_attacks', 'autowaver_attacks', 'manual_attacks']],
+                on='username',
+                suffixes=('_current', '_previous')
+            )
             
-            # Target types aggregation
+            # Calculate daily changes
+            merged_df['daily_total'] = merged_df['total_attacks_current'].fillna(0) - merged_df['total_attacks_previous'].fillna(0)
+            merged_df['daily_autowaver'] = merged_df['autowaver_attacks_current'].fillna(0) - merged_df['autowaver_attacks_previous'].fillna(0)
+            merged_df['daily_manual'] = merged_df['manual_attacks_current'].fillna(0) - merged_df['manual_attacks_previous'].fillna(0)
+            
+            # Filter to only show players with daily changes and positive values
+            daily_attackers = merged_df[merged_df['daily_total'] > 0].copy()
+            daily_attackers = daily_attackers.sort_values('daily_total', ascending=False).head(10)
+            
+            if not daily_attackers.empty:
+                # Replace negative values with 0 for display
+                daily_attackers['daily_total'] = daily_attackers['daily_total'].apply(lambda x: max(0, x))
+                daily_attackers['daily_autowaver'] = daily_attackers['daily_autowaver'].apply(lambda x: max(0, x))
+                daily_attackers['daily_manual'] = daily_attackers['daily_manual'].apply(lambda x: max(0, x))
+                
+                daily_attackers['daily_total'] = daily_attackers['daily_total'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_attackers['daily_autowaver'] = daily_attackers['daily_autowaver'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_attackers['daily_manual'] = daily_attackers['daily_manual'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_attackers = daily_attackers[['username', 'daily_total', 'daily_autowaver', 'daily_manual']]
+                daily_attackers.columns = ['Player', 'Daily Total', 'Daily Autowaver', 'Daily Manual']
+                st.dataframe(daily_attackers, width='stretch', hide_index=True, use_container_width=True)
+            
+            # Target types aggregation (daily changes)
             target_types_current = defaultdict(int)
+            target_types_previous = defaultdict(int)
+            
             for _, row in current_df.iterrows():
                 try:
                     target_types = json.loads(row.get('target_types_json', '{}'))
@@ -221,10 +293,26 @@ def create_daily_report_tab(filtered_df):
                 except:
                     pass
             
-            if target_types_current:
+            for _, row in previous_df.iterrows():
+                try:
+                    target_types = json.loads(row.get('target_types_json', '{}'))
+                    for target, count in target_types.items():
+                        target_types_previous[target] += count
+                except:
+                    pass
+            
+            # Calculate daily changes for each target type
+            target_types_daily = {}
+            all_targets = set(target_types_current.keys()) | set(target_types_previous.keys())
+            for target in all_targets:
+                daily_change = target_types_current.get(target, 0) - target_types_previous.get(target, 0)
+                if daily_change > 0:
+                    target_types_daily[target] = daily_change
+            
+            if target_types_daily:
                 target_df = pd.DataFrame([
-                    {'Target': k, 'Attacks': format_comma(v)}
-                    for k, v in sorted(target_types_current.items(), key=lambda x: x[1], reverse=True)
+                    {'Target': k, 'Daily Attacks': format_comma(v)}
+                    for k, v in sorted(target_types_daily.items(), key=lambda x: x[1], reverse=True)
                 ])
                 st.dataframe(target_df, width='stretch', hide_index=True, use_container_width=True)
         else:
@@ -232,30 +320,99 @@ def create_daily_report_tab(filtered_df):
         
         st.markdown("---")
         
+        # Purchase Analysis
+        st.markdown("**💳 Purchase Analysis**")
+        
+        if 'total_purchases' in current_df.columns:
+            current_total_purchases = current_df['total_purchases'].fillna(0).sum()
+            previous_total_purchases = previous_df['total_purchases'].fillna(0).sum()
+            purchase_change = current_total_purchases - previous_total_purchases
+            
+            current_shop = current_df['total_shop_purchases'].fillna(0).sum()
+            previous_shop = previous_df['total_shop_purchases'].fillna(0).sum()
+            shop_change = current_shop - previous_shop
+            
+            current_store = current_df['total_store_purchases'].fillna(0).sum()
+            previous_store = previous_df['total_store_purchases'].fillna(0).sum()
+            store_change = current_store - previous_store
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Purchases", format_comma(current_total_purchases), delta=f"{purchase_change:+,}")
+            with col2:
+                st.metric("Shop Purchases", format_comma(current_shop), delta=f"{shop_change:+,}")
+            with col3:
+                st.metric("Store Purchases", format_comma(current_store), delta=f"{store_change:+,}")
+            
+            # Top purchasers (daily changes)
+            purchases_merged = current_df[['username', 'total_purchases', 'total_shop_purchases', 'total_store_purchases']].merge(
+                previous_df[['username', 'total_purchases', 'total_shop_purchases', 'total_store_purchases']],
+                on='username',
+                suffixes=('_current', '_previous')
+            )
+            
+            purchases_merged['daily_total'] = purchases_merged['total_purchases_current'].fillna(0) - purchases_merged['total_purchases_previous'].fillna(0)
+            purchases_merged['daily_shop'] = purchases_merged['total_shop_purchases_current'].fillna(0) - purchases_merged['total_shop_purchases_previous'].fillna(0)
+            purchases_merged['daily_store'] = purchases_merged['total_store_purchases_current'].fillna(0) - purchases_merged['total_store_purchases_previous'].fillna(0)
+            
+            daily_purchasers = purchases_merged[purchases_merged['daily_total'] > 0].copy()
+            daily_purchasers = daily_purchasers.sort_values('daily_total', ascending=False).head(10)
+            
+            if not daily_purchasers.empty:
+                daily_purchasers['daily_total'] = daily_purchasers['daily_total'].apply(lambda x: max(0, x))
+                daily_purchasers['daily_shop'] = daily_purchasers['daily_shop'].apply(lambda x: max(0, x))
+                daily_purchasers['daily_store'] = daily_purchasers['daily_store'].apply(lambda x: max(0, x))
+                
+                daily_purchasers['daily_total'] = daily_purchasers['daily_total'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_purchasers['daily_shop'] = daily_purchasers['daily_shop'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_purchasers['daily_store'] = daily_purchasers['daily_store'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
+                daily_purchasers = daily_purchasers[['username', 'daily_total', 'daily_shop', 'daily_store']]
+                daily_purchasers.columns = ['Player', 'Daily Total', 'Daily Shop', 'Daily Store']
+                st.dataframe(daily_purchasers, width='stretch', hide_index=True, use_container_width=True)
+        else:
+            st.info("Purchase statistics not available in current CSV files. Run sync tool to regenerate CSV files with purchase data.")
+        
+        st.markdown("---")
+        
         # Top power gainers and losers in left column, alliance growth in right column
         col1, col2 = st.columns(2)
         
+        # Create merged dataframe for power analysis
+        power_merged_df = pd.merge(
+            current_df[['username', 'power', 'total_troops', 'alliance_name']],
+            previous_df[['username', 'power', 'total_troops', 'alliance_name']],
+            on='username',
+            suffixes=('_current', '_previous'),
+            how='outer'
+        )
+        power_merged_df['power_change'] = power_merged_df['power_current'] - power_merged_df['power_previous']
+        power_merged_df['troop_change'] = power_merged_df['total_troops_current'] - power_merged_df['total_troops_previous']
+        # Use current alliance name, fall back to previous if current is NaN
+        power_merged_df['alliance_name'] = power_merged_df['alliance_name_current'].fillna(power_merged_df['alliance_name_previous'])
+        
         with col1:
             st.markdown("**🏆 Top Power Gainers**")
-            merged_df_sorted = merged_df[merged_df['power_change'].notna()].sort_values('power_change', ascending=False)
-            top_gainers = merged_df_sorted.head(5)[['username', 'power_previous', 'power_current', 'power_change']].copy()
+            merged_df_sorted = power_merged_df[power_merged_df['power_change'].notna()].sort_values('power_change', ascending=False)
+            top_gainers = merged_df_sorted.head(5)[['username', 'alliance_name', 'power_previous', 'power_current', 'power_change']].copy()
             
             if not top_gainers.empty:
+                top_gainers['alliance_name'] = top_gainers['alliance_name'].fillna('')
                 top_gainers['power_previous'] = top_gainers['power_previous'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_gainers['power_current'] = top_gainers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_gainers['power_change'] = top_gainers['power_change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
-                top_gainers.columns = ['Player', 'Prev', 'Curr', 'Change']
+                top_gainers.columns = ['Player', 'Alliance', 'Prev', 'Curr', 'Change']
                 st.dataframe(top_gainers, width='stretch', hide_index=True, use_container_width=True)
             
             st.markdown("**📉 Top Power Losers**")
-            merged_df_sorted_losers = merged_df[merged_df['power_change'].notna()].sort_values('power_change', ascending=True)
-            top_losers = merged_df_sorted_losers.head(5)[['username', 'power_previous', 'power_current', 'power_change']].copy()
+            merged_df_sorted_losers = power_merged_df[power_merged_df['power_change'].notna()].sort_values('power_change', ascending=True)
+            top_losers = merged_df_sorted_losers.head(5)[['username', 'alliance_name', 'power_previous', 'power_current', 'power_change']].copy()
             
             if not top_losers.empty:
+                top_losers['alliance_name'] = top_losers['alliance_name'].fillna('')
                 top_losers['power_previous'] = top_losers['power_previous'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_losers['power_current'] = top_losers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_losers['power_change'] = top_losers['power_change'].apply(lambda x: format_comma(x))
-                top_losers.columns = ['Player', 'Prev', 'Curr', 'Change']
+                top_losers.columns = ['Player', 'Alliance', 'Prev', 'Curr', 'Change']
                 st.dataframe(top_losers, width='stretch', hide_index=True, use_container_width=True)
         
         with col2:

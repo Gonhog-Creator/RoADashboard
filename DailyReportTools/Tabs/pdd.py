@@ -174,6 +174,7 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
                             f"{clean_skin.lower().replace(' ', '_')}.webp",
                             f"{clean_skin.lower().replace(' ', '_')}_small.webp",
                             f"{clean_skin.lower().replace(' ', '_')}_large.webp",
+                            f"{clean_skin.lower().replace(' ', '_')}-.webp",
                         ]
                         
                         icon_found = False
@@ -195,13 +196,93 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
                     icons_html += "</div>"
                     st.markdown(icons_html, unsafe_allow_html=True)
     
+    # Active Effects section
+    if 'active_effects' in player_data and pd.notna(player_data['active_effects']) and player_data['active_effects']:
+        st.markdown("#### Active Effects")
+        active_effects_str = player_data['active_effects']
+        effects_list = active_effects_str.split('|')
+        if effects_list:
+            # Display effects in a responsive flexbox grid
+            effects_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin: 10px 0;'>"
+            
+            for effect in effects_list:
+                if ':' in effect:
+                    # Parse effect format: source:type:level:duration
+                    parts = effect.split(':')
+                    if len(parts) >= 2:
+                        effect_name = parts[0].strip()  # Use source (effect name) instead of type
+                        effect_type = parts[1].strip()
+                        effect_duration = parts[3].strip() if len(parts) >= 4 else ''
+                        
+                        # Convert effect name to icon filename (lowercase, replace spaces with underscores)
+                        icon_filename = f"{effect_name.lower().replace(' ', '_')}.webp"
+                        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
+                        
+                        # Convert image to base64
+                        img_data_url = ""
+                        if os.path.exists(icon_path):
+                            try:
+                                with open(icon_path, 'rb') as f:
+                                    img_data = base64.b64encode(f.read()).decode('utf-8')
+                                    img_data_url = f"data:image/webp;base64,{img_data}"
+                            except:
+                                pass
+                        
+                        if img_data_url:
+                            duration_div = f"<div style='font-size: 12px; color: #666;'>{effect_duration}</div>" if effect_duration else ""
+                            effects_html += f"<div style='text-align: center; min-width: 80px; flex: 1;'><img src='{img_data_url}' style='width: 60px; height: 60px;'><div style='font-size: 14px; font-weight: bold; margin-top: 5px;'>{effect_name.replace('_', ' ').title()}</div>{duration_div}</div>"
+            
+            effects_html += "</div>"
+            st.markdown(effects_html, unsafe_allow_html=True)
+    
+    # Permanent Effects section
+    if 'permanent_effects' in player_data and pd.notna(player_data['permanent_effects']) and player_data['permanent_effects']:
+        st.markdown("#### 🏆 Permanent Effects")
+        permanent_effects_str = player_data['permanent_effects']
+        effects_list = permanent_effects_str.split('|')
+        if effects_list:
+            # Display effects in a responsive flexbox grid
+            effects_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin: 10px 0;'>"
+            
+            for effect in effects_list:
+                if ':' in effect:
+                    # Parse effect format: source:type:level:duration
+                    parts = effect.split(':')
+                    if len(parts) >= 2:
+                        effect_name = parts[0].strip()  # Use source (effect name) instead of type
+                        effect_type = parts[1].strip()
+                        effect_level = parts[2].strip() if len(parts) >= 3 else ''
+                        effect_duration = parts[3].strip() if len(parts) >= 4 else ''
+                        
+                        # Convert effect name to icon filename (lowercase, replace spaces with underscores)
+                        icon_filename = f"{effect_name.lower().replace(' ', '_')}.webp"
+                        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
+                        
+                        # Convert image to base64
+                        img_data_url = ""
+                        if os.path.exists(icon_path):
+                            try:
+                                with open(icon_path, 'rb') as f:
+                                    img_data = base64.b64encode(f.read()).decode('utf-8')
+                                    img_data_url = f"data:image/webp;base64,{img_data}"
+                            except:
+                                pass
+                        
+                        if img_data_url:
+                            level_div = f"<div style='font-size: 12px; color: #666;'>Level {effect_level}</div>" if effect_level else ""
+                            duration_div = f"<div style='font-size: 12px; color: #666;'>{effect_duration}</div>" if effect_duration else ""
+                            effects_html += f"<div style='text-align: center; min-width: 80px; flex: 1;'><img src='{img_data_url}' style='width: 60px; height: 60px;'><div style='font-size: 14px; font-weight: bold; margin-top: 5px;'>{effect_name.replace('_', ' ').title()}</div>{level_div}{duration_div}</div>"
+            
+            effects_html += "</div>"
+            st.markdown(effects_html, unsafe_allow_html=True)
+    
     # Troops section (condensed table - troop types as columns, counts as single row)
     # Use raw_player_data directly to get current data instead of cached
     if 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None:
         player_df = latest_data['raw_player_data']
         player = player_df[player_df['username'] == selected_name]
         if not player.empty and 'troops_json' in player.columns:
-            st.markdown("#### ⚔️ Troops")
+            st.markdown("#### Troops")
             try:
                 troops_dict = json.loads(player['troops_json'].iloc[0])
                 if troops_dict:
@@ -239,6 +320,132 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
                     st.dataframe(troops_df, width='stretch')
             except:
                 st.info("Troops data unavailable")
+    
+    # Purchases section
+    if 'shop_purchases' in player_data and pd.notna(player_data['shop_purchases']) and player_data['shop_purchases']:
+        st.markdown("#### Shop Purchases")
+        shop_purchases_str = player_data['shop_purchases']
+        shop_purchases_list = shop_purchases_str.split('|')
+        
+        if shop_purchases_list:
+            # Display purchases in a table
+            purchases_data = []
+            for purchase in shop_purchases_list:
+                parts = purchase.split(':')
+                if len(parts) >= 3:
+                    item_name = parts[0].strip()
+                    amount = parts[1].strip()
+                    purchased_at = parts[2].strip()
+                    purchases_data.append({
+                        'Item': item_name,
+                        'Amount': amount,
+                        'Purchased At': purchased_at
+                    })
+            
+            if purchases_data:
+                purchases_df = pd.DataFrame(purchases_data)
+                st.dataframe(purchases_df, width='stretch', hide_index=True)
+    
+    if 'store_purchases' in player_data and pd.notna(player_data['store_purchases']) and player_data['store_purchases']:
+        st.markdown("#### Store Purchases")
+        store_purchases_str = player_data['store_purchases']
+        store_purchases_list = store_purchases_str.split('|')
+        
+        if store_purchases_list:
+            # Display purchases in a table
+            purchases_data = []
+            for purchase in store_purchases_list:
+                parts = purchase.split(':')
+                if len(parts) >= 3:
+                    product_id = parts[0].strip()
+                    amount = parts[1].strip()
+                    purchased_at = parts[2].strip()
+                    purchases_data.append({
+                        'Product': product_id,
+                        'Amount': amount,
+                        'Purchased At': purchased_at
+                    })
+            
+            if purchases_data:
+                purchases_df = pd.DataFrame(purchases_data)
+                st.dataframe(purchases_df, width='stretch', hide_index=True)
+    
+    # Daily attacks section
+    st.markdown("#### Daily Attacks (Last 24 Hours)")
+    try:
+        from datetime import datetime, timedelta
+        import csv
+        
+        # Get battle.csv path
+        battle_csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'DatabaseParser', 'battle.csv')
+        
+        if os.path.exists(battle_csv_path):
+            # Get selected player's ID
+            player_id = player_data.get('uuid', '')
+            
+            if player_id:
+                # Calculate cutoff time (24 hours ago)
+                cutoff_time = datetime.now() - timedelta(days=1)
+                
+                # Read battle.csv and filter for player's attacks in last 24 hours
+                daily_attacks = []
+                autowaver_count = 0
+                manual_count = 0
+                target_types = {}
+                
+                with open(battle_csv_path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get('attacker_id') == player_id:
+                            launched_at = row.get('launched_at', '')
+                            if launched_at:
+                                try:
+                                    battle_time = datetime.strptime(launched_at, '%Y-%m-%d %H:%M:%S')
+                                    if battle_time >= cutoff_time:
+                                        daily_attacks.append(row)
+                                        
+                                        # Check if autowaver or manual
+                                        metadata = row.get('metadata', '')
+                                        if 'from_auto_waver":true' in metadata:
+                                            autowaver_count += 1
+                                        else:
+                                            manual_count += 1
+                                        
+                                        # Count target types
+                                        try:
+                                            metadata_dict = json.loads(metadata)
+                                            target_name = metadata_dict.get('target_name', 'unknown')
+                                            if target_name:
+                                                target_types[target_name] = target_types.get(target_name, 0) + 1
+                                        except:
+                                            pass
+                                except:
+                                    pass
+                
+                if daily_attacks:
+                    # Display attack statistics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Daily Attacks", len(daily_attacks))
+                    with col2:
+                        st.metric("Autowaver", autowaver_count)
+                    with col3:
+                        st.metric("Manual", manual_count)
+                    
+                    # Display target types if available
+                    if target_types:
+                        st.markdown("**Target Types**")
+                        target_df = pd.DataFrame([
+                            {'Target': k, 'Attacks': v}
+                            for k, v in sorted(target_types.items(), key=lambda x: x[1], reverse=True)
+                        ])
+                        st.dataframe(target_df, width='stretch', hide_index=True)
+                else:
+                    st.info("No attacks in the last 24 hours")
+        else:
+            st.info("Battle data not available")
+    except Exception as e:
+        st.info(f"Unable to load daily attack data: {e}")
     
     # Charts section
     st.markdown("---")
@@ -480,10 +687,22 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
                     
                     for building_type in sorted(buildings_by_type.keys(), key=lambda x: sum(buildings_by_type[x].values()), reverse=True):
                         with cols[col_idx % 5]:
-                            # Get building icon
-                            icon_filename = f"{building_type.lower().replace(' ', '_')}.webp"
-                            # Use relative path from the app's working directory
-                            icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
+                            # Get building icon - try multiple filename variations
+                            icon_variations = [
+                                f"{building_type.lower().replace(' ', '_')}.webp",
+                                f"{building_type.lower().replace(' ', '_')}-.webp",
+                            ]
+                            
+                            icon_path = None
+                            for icon_filename in icon_variations:
+                                test_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
+                                if os.path.exists(test_path):
+                                    icon_path = test_path
+                                    break
+                            
+                            # Handle specific typo for fountain of life
+                            if not icon_path and building_type.lower().replace(' ', '_') == 'fountain_of_life':
+                                icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", "foutain_of_life.webp")
                             
                             # Convert image to base64
                             img_data_url = ""

@@ -242,6 +242,10 @@ class PlayerDataAnalyzer:
         research_by_player = self.group_by_field(data.get('research', []), 'player_id')
         quests_by_player = self.group_by_field(data.get('quest', []), 'player_id')
         
+        # Process purchases
+        shop_item_purchases_by_player = self.group_by_field(data.get('shop_item_purchase', []), 'player_id')
+        store_purchases_by_player = self.group_by_field(data.get('store_purchase', []), 'player_id')
+        
         # Process user data
         users = {user['uuid']: user for user in data.get('user', [])}
         
@@ -531,6 +535,34 @@ class PlayerDataAnalyzer:
             player_data['total_quests_count'] = len(quest_items)
             player_data['quest_types'] = '|'.join(sorted(quest_types)) if quest_types else ''
             
+            # Process purchases
+            shop_item_purchases = shop_item_purchases_by_player.get(player_id, [])
+            store_purchases = store_purchases_by_player.get(player_id, [])
+            
+            # Process shop item purchases
+            shop_purchases_list = []
+            for purchase in shop_item_purchases:
+                item_name = purchase.get('item_name', '')
+                amount = purchase.get('amount', '')
+                purchased_at = purchase.get('purchased_at', '')
+                if item_name:
+                    shop_purchases_list.append(f"{item_name}:{amount}:{purchased_at}")
+            
+            # Process store purchases
+            store_purchases_list = []
+            for purchase in store_purchases:
+                product_id = purchase.get('product_id', '')
+                amount = purchase.get('amount', '')
+                purchased_at = purchase.get('purchased_at', '')
+                if product_id:
+                    store_purchases_list.append(f"{product_id}:{amount}:{purchased_at}")
+            
+            player_data['shop_purchases'] = '|'.join(shop_purchases_list) if shop_purchases_list else ''
+            player_data['store_purchases'] = '|'.join(store_purchases_list) if store_purchases_list else ''
+            player_data['total_shop_purchases'] = len(shop_purchases_list)
+            player_data['total_store_purchases'] = len(store_purchases_list)
+            player_data['total_purchases'] = len(shop_purchases_list) + len(store_purchases_list)
+            
             # Process alliance data
             alliance_memberships = alliance_members.get(player_id, [])
             if alliance_memberships:
@@ -565,7 +597,8 @@ class PlayerDataAnalyzer:
                 
                 effect_types.add(effect_type)
                 
-                effect_info = f"{effect_source}:{effect_type}:{effect_level}"
+                # Include duration in effect info: source:type:level:duration
+                effect_info = f"{effect_source}:{effect_type}:{effect_level}:{effect_duration}"
                 if effect_is_permanent == 't':
                     permanent_effects.append(effect_info)
                 else:

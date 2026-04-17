@@ -21,6 +21,20 @@ from player_data_analyzer import PlayerDataAnalyzer
 
 class GitHubS3Sync:
     def __init__(self, force_reprocess=True):
+        # Load secrets from secrets.json first
+        secrets = self.load_secrets()
+        if secrets:
+            if not os.environ.get('S3_ACCESS_KEY_ID'):
+                os.environ['S3_ACCESS_KEY_ID'] = secrets.get('S3_ACCESS_KEY_ID', '')
+            if not os.environ.get('S3_SECRET_ACCESS_KEY'):
+                os.environ['S3_SECRET_ACCESS_KEY'] = secrets.get('S3_SECRET_ACCESS_KEY', '')
+            if not os.environ.get('PAT_TOKEN'):
+                os.environ['PAT_TOKEN'] = secrets.get('PAT_TOKEN', '')
+            if not os.environ.get('GITHUB_OWNER'):
+                os.environ['GITHUB_OWNER'] = secrets.get('GITHUB_OWNER', '')
+            if not os.environ.get('GITHUB_REPO'):
+                os.environ['GITHUB_REPO'] = secrets.get('GITHUB_REPO', '')
+        
         # S3 Configuration
         self.s3_region = os.environ.get('S3_REGION', 'eu-west-par')
         self.s3_endpoint = os.environ.get('S3_ENDPOINT', 'https://s3.eu-west-par.io.cloud.ovh.net/')
