@@ -19,6 +19,7 @@ from Tabs.map import create_map_tab
 from Tabs.alliance import create_alliance_tab
 from Tabs.pdd import create_pdd_tab
 from Tabs.daily_report import create_daily_report_tab
+from Tabs.purchases import create_purchases_tab
 from cache_manager import cache_manager
 
 def get_realm_name(realm_id):
@@ -344,7 +345,7 @@ else:
     cache_manager.initialize_cache(filtered_df)
     
     # Tabs for different views
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs(["Overview", "Daily Report", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research", "Protected Resources", "Map", "Alliance", "PDD"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15, tab16 = st.tabs(["Overview", "Daily Report", "Player Count", "Resources", "Power", "Speedups", "Items", "Troops", "Buildings", "Skins", "Quests & Research", "Protected Resources", "Map", "Alliance", "PDD", "Purchases"])
     
     with tab1:
         create_overview_tab(filtered_df)
@@ -651,6 +652,9 @@ else:
     
     with tab15:
         create_pdd_tab(filtered_df)
+    
+    with tab16:
+        create_purchases_tab()
 
 # Add cache clear button at bottom
 st.sidebar.markdown("---")

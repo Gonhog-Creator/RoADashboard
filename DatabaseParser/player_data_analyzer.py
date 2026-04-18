@@ -13,6 +13,9 @@ import shutil
 from collections import defaultdict
 from datetime import datetime
 
+# Parser version - increment this when making breaking changes to the CSV format
+PARSER_VERSION = "1.2"
+
 class PlayerDataAnalyzer:
     def __init__(self, database_path):
         self.database_path = database_path
@@ -280,9 +283,27 @@ class PlayerDataAnalyzer:
                 user = users[account_id]
                 player_data['user_email'] = user.get('email', '')
                 player_data['user_created_at'] = user.get('created_at', '')
+                
+                # Parse last login IP from connected_ips
+                connected_ips = user.get('connected_ips', '')
+                if connected_ips:
+                    try:
+                        # connected_ips is a string like '["81.33.188.66","88.1.152.63"]'
+                        import json
+                        ips = json.loads(connected_ips)
+                        if ips and isinstance(ips, list) and len(ips) > 0:
+                            # Last IP is the most recent login
+                            player_data['last_login_ip'] = ips[-1]
+                        else:
+                            player_data['last_login_ip'] = ''
+                    except:
+                        player_data['last_login_ip'] = ''
+                else:
+                    player_data['last_login_ip'] = ''
             else:
                 player_data['user_email'] = ''
                 player_data['user_created_at'] = ''
+                player_data['last_login_ip'] = ''
             
             # Process items using registry
             items = items_by_player.get(player_id, [])
@@ -630,13 +651,116 @@ class PlayerDataAnalyzer:
             fieldnames.update(row.keys())
         fieldnames = sorted(list(fieldnames))
         
+        # Add parser version to fieldnames if not present
+        if 'parser_version' not in fieldnames:
+            fieldnames.append('parser_version')
+        
         with open(filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
+            # Add parser version to each row
+            for row in data:
+                row['parser_version'] = PARSER_VERSION
             writer.writerows(data)
         
-        print(f"CSV written to {filename} with {len(data)} rows and {len(fieldnames)} columns")
+        print(f"CSV written to {filename} with {len(data)} rows and {len(fieldnames)} columns (parser version {PARSER_VERSION})")
         return fieldnames
+    
+    def check_parser_version(self, csv_file):
+        """Check the parser version of an existing CSV file"""
+        try:
+            with open(csv_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                first_row = next(reader, None)
+                if first_row and 'parser_version' in first_row:
+                    return first_row['parser_version']
+        except:
+            pass
+        return None
+    
+    def should_regenerate_all(self, output_dir):
+        """Check if any comprehensive CSV files need regeneration due to parser version change"""
+        comprehensive_files = [
+            os.path.join(output_dir, f) 
+            for f in os.listdir(output_dir) 
+            if f.startswith('comprehensive_player_data_') and f.endswith('.csv')
+        ]
+        
+        for csv_file in comprehensive_files:
+            existing_version = self.check_parser_version(csv_file)
+            if existing_version and existing_version != PARSER_VERSION:
+                print(f"Parser version changed from {existing_version} to {PARSER_VERSION}")
+                print(f"Regenerating all comprehensive CSV files...")
+                return True
+            elif not existing_version:
+                print(f"CSV file {csv_file} has no parser version, regenerating...")
+                return True
+        
+        return False
+    
+    def regenerate_all_comprehensive_csvs(self, output_dir):
+        """Regenerate all comprehensive CSV files with current parser version"""
+        comprehensive_files = [
+            os.path.join(output_dir, f) 
+            for f in os.listdir(output_dir) 
+            if f.startswith('comprehensive_player_data_') and f.endswith('.csv')
+        ]
+        
+        print(f"Found {len(comprehensive_files)} comprehensive CSV files to regenerate")
+        
+        for csv_file in comprehensive_files:
+            try:
+                # Find corresponding tar.gz file based on timestamp
+                csv_basename = os.path.basename(csv_file)
+                # Extract timestamp from CSV filename
+                timestamp = csv_basename.replace('comprehensive_player_data_', '').replace('.csv', '')
+                
+                # Find matching tar.gz file
+                tar_file = None
+                for tf in self.tar_files:
+                    tf_basename = os.path.basename(tf)
+                    if timestamp in tf_basename:
+                        tar_file = tf
+                        break
+                
+                if tar_file:
+                    print(f"Regenerating {csv_basename} from {os.path.basename(tar_file)}...")
+                    
+                    # Create temporary processing directory
+                    temp_dir = os.path.join(self.database_path, f"temp_regen_{timestamp}")
+                    if os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+                    os.makedirs(temp_dir, exist_ok=True)
+                    
+                    # Copy tar file to temp directory
+                    temp_tar = os.path.join(temp_dir, os.path.basename(tar_file))
+                    shutil.copy(tar_file, temp_tar)
+                    
+                    # Process with analyzer
+                    temp_analyzer = PlayerDataAnalyzer(temp_dir)
+                    temp_analyzer.generate_comprehensive_csv()
+                    
+                    # Move generated CSV to replace old one
+                    new_csv_files = [
+                        os.path.join(temp_dir, f) 
+                        for f in os.listdir(temp_dir) 
+                        if f.startswith('comprehensive_player_data_') and f.endswith('.csv')
+                    ]
+                    
+                    if new_csv_files:
+                        new_csv = new_csv_files[0]
+                        shutil.move(new_csv, csv_file)
+                        print(f"Regenerated {csv_basename}")
+                    
+                    # Clean up temp directory
+                    shutil.rmtree(temp_dir)
+                else:
+                    print(f"Warning: Could not find matching tar.gz file for {csv_basename}")
+                    
+            except Exception as e:
+                print(f"Error regenerating {csv_basename}: {e}")
+        
+        print("Regeneration complete")
     
     def generate_summary(self, data, fieldnames, output_file):
         """Generate summary statistics"""
@@ -678,6 +802,12 @@ class PlayerDataAnalyzer:
     def generate_comprehensive_csv(self):
         """Main function to generate the comprehensive CSV for all tar files"""
         print("Starting comprehensive player data analysis...")
+        print(f"Parser version: {PARSER_VERSION}")
+        
+        # Check if regeneration is needed
+        if self.should_regenerate_all(self.database_path):
+            self.regenerate_all_comprehensive_csvs(self.database_path)
+            print("Regeneration complete, proceeding with normal processing...")
         
         for tar_file in self.tar_files:
             print(f"\n{'='*60}")

@@ -801,19 +801,91 @@ def create_pdd_tab(filtered_df):
         player_df = latest_data['raw_player_data']
         
         if isinstance(player_df, pd.DataFrame) and not player_df.empty:
-            # Player search section
-            st.markdown("#### Player Search")
+            # Add tabs for Player Details and Alts
+            tab1, tab2 = st.tabs(["Player Details", "Alts"])
             
-            # Create player options with name, alliance, power
-            player_options = []
-            for _, player in player_df.iterrows():
-                player_name = player.get('username', 'Unknown')
-                alliance_name = player.get('alliance_name', 'None')
-                power = player.get('power', 0)
-                player_options.append(f"{player_name} | {alliance_name} | {int(power):,}")
+            with tab1:
+                # Player search section
+                st.markdown("#### Player Search")
+                
+                # Create player options with name, alliance, power
+                player_options = []
+                for _, player in player_df.iterrows():
+                    player_name = player.get('username', 'Unknown')
+                    alliance_name = player.get('alliance_name', 'None')
+                    power = player.get('power', 0)
+                    player_options.append(f"{player_name} | {alliance_name} | {int(power):,}")
+                
+                # Render player search in fragment for instant search updates
+                render_player_search(player_options, latest_data, filtered_df)
             
-            # Render player search in fragment for instant search updates
-            render_player_search(player_options, latest_data, filtered_df)
+            with tab2:
+                # Alts detection section
+                st.markdown("#### Alts Detection")
+                render_alts_detection(player_df)
+
+@st.fragment
+def render_alts_detection(player_df):
+    """Fragment for alts detection - shows players sharing the same IP"""
+    if 'last_login_ip' not in player_df.columns:
+        st.info("Last login IP data not available. Regenerate comprehensive CSV with updated parser.")
+        return
+    
+    # Filter players with valid IP addresses
+    players_with_ip = player_df[player_df['last_login_ip'].notna() & (player_df['last_login_ip'] != '')].copy()
+    
+    if players_with_ip.empty:
+        st.info("No players with IP addresses found.")
+        return
+    
+    # Group players by IP address
+    ip_groups = players_with_ip.groupby('last_login_ip')
+    
+    # Find IPs with multiple players (potential alts)
+    alts_data = []
+    for ip, group in ip_groups:
+        if len(group) > 1:
+            # Sort by power descending
+            group_sorted = group.sort_values('power', ascending=False)
+            
+            # First player is main account (highest power), rest are alts
+            main_player = group_sorted.iloc[0]
+            alt_players = group_sorted.iloc[1:]
+            
+            main_data = {
+                'Main Account': main_player.get('username', 'Unknown'),
+                'Main Power': int(main_player.get('power', 0)),
+                'Main Alliance': main_player.get('alliance_name', 'None'),
+                'IP Address': ip,
+                'Alt Accounts': ', '.join(alt_players['username'].tolist()),
+                'Alt Powers': ', '.join([f"{int(p):,}" for p in alt_players['power'].tolist()]),
+                'Alt Alliances': ', '.join(alt_players['alliance_name'].tolist()),
+                'Total Alts': len(alt_players)
+            }
+            alts_data.append(main_data)
+    
+    if alts_data:
+        alts_df = pd.DataFrame(alts_data)
+        
+        # Format display
+        alts_df['Main Power'] = alts_df['Main Power'].apply(lambda x: f"{x:,}")
+        alts_df = alts_df.sort_values('Total Alts', ascending=False)
+        
+        st.markdown(f"**Found {len(alts_df)} IP addresses with multiple accounts**")
+        st.dataframe(alts_df, width='stretch', hide_index=True, use_container_width=True)
+        
+        # Add detailed breakdown
+        st.markdown("---")
+        st.markdown("**Detailed Breakdown**")
+        for _, row in alts_df.iterrows():
+            with st.expander(f"{row['Main Account']} ({row['Main Power']} power) - {row['Total Alts']} alts"):
+                st.markdown(f"**IP Address:** {row['IP Address']}")
+                st.markdown(f"**Main Account:** {row['Main Account']} | Power: {row['Main Power']} | Alliance: {row['Main Alliance']}")
+                st.markdown(f"**Alt Accounts:** {row['Alt Accounts']}")
+                st.markdown(f"**Alt Powers:** {row['Alt Powers']}")
+                st.markdown(f"**Alt Alliances:** {row['Alt Alliances']}")
+    else:
+        st.info("No players sharing IP addresses found.")
 
 @st.fragment
 def render_player_search(player_options, latest_data, filtered_df):
