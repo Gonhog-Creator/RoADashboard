@@ -311,3 +311,114 @@ def create_speedups_tab(filtered_df):
                 st.plotly_chart(fig_speedups, width='stretch')
         else:
             st.info("No speedup items found in the data.")
+        
+        # Daily Speedup Usage by Player (last 24 hours)
+        st.markdown("---")
+        st.markdown("**📊 Daily Speedup Usage by Player (Last 24 Hours)**")
+        
+        # Get data from 24 hours ago for comparison
+        from datetime import timedelta
+        current_time = filtered_df['date'].max()
+        twenty_four_hours_ago = current_time - timedelta(hours=24)
+        
+        # Find the closest report to 24 hours ago
+        closest_24h_ago = None
+        min_diff = float('inf')
+        for _, row in filtered_df.iterrows():
+            diff = abs((row['date'] - twenty_four_hours_ago).total_seconds())
+            if diff < min_diff:
+                min_diff = diff
+                closest_24h_ago = row
+        
+        # Get current data (most recent report)
+        current_data = filtered_df.loc[filtered_df['date'] == current_time].iloc[0] if not filtered_df[filtered_df['date'] == current_time].empty else filtered_df.iloc[-1]
+        
+        if closest_24h_ago is not None and min_diff < 3600 * 12:  # Only if we have data within 12 hours of 24h mark
+            actual_hours_diff = (current_data['date'] - closest_24h_ago['date']).total_seconds() / 3600
+            st.info(f"Comparing {current_data['date'].strftime('%Y-%m-%d %H:%M')} with {closest_24h_ago['date'].strftime('%Y-%m-%d %H:%M')} ({actual_hours_diff:.1f} hours apart)")
+            
+            current_player_df = current_data.get('raw_player_data')
+            previous_player_df = closest_24h_ago.get('raw_player_data')
+            
+            if current_player_df is not None and previous_player_df is not None and isinstance(current_player_df, pd.DataFrame) and isinstance(previous_player_df, pd.DataFrame):
+                # Calculate speedup usage per player
+                player_speedup_usage = []
+                
+                for _, current_player in current_player_df.iterrows():
+                    username = current_player.get('username', '')
+                    if not username:
+                        continue
+                    
+                    # Find matching player in previous data
+                    previous_player = previous_player_df[previous_player_df['username'] == username]
+                    
+                    if previous_player.empty:
+                        continue
+                    
+                    # Calculate speedup usage for each speedup type
+                    speedup_totals = {}
+                    
+                    for speedup_type in available_speedups:
+                        current_count = 0
+                        previous_count = 0
+                        
+                        # Get current speedup count
+                        if 'items_json' in current_player.index and pd.notna(current_player['items_json']):
+                            try:
+                                items_dict = json.loads(current_player['items_json'])
+                                for item_name, amount in items_dict.items():
+                                    search_key = speedup_type.lower().replace(' ', '_')
+                                    search_name = item_name.lower()
+                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                        current_count += amount
+                            except:
+                                pass
+                        
+                        # Get previous speedup count
+                        if 'items_json' in previous_player.columns and pd.notna(previous_player['items_json'].iloc[0]):
+                            try:
+                                items_dict = json.loads(previous_player['items_json'].iloc[0])
+                                for item_name, amount in items_dict.items():
+                                    search_key = speedup_type.lower().replace(' ', '_')
+                                    search_name = item_name.lower()
+                                    if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                        previous_count += amount
+                            except:
+                                pass
+                        
+                        # Calculate usage (current - previous)
+                        usage = current_count - previous_count
+                        if usage > 0:
+                            speedup_totals[speedup_type] = usage
+                    
+                    if speedup_totals:
+                        total_usage = sum(speedup_totals.values())
+                        player_speedup_usage.append({
+                            'Player': username,
+                            'Total Speedups Used': total_usage,
+                            **speedup_totals
+                        })
+                
+                if player_speedup_usage:
+                    # Sort by total usage
+                    usage_df = pd.DataFrame(player_speedup_usage)
+                    usage_df = usage_df.sort_values('Total Speedups Used', ascending=False)
+                    
+                    # Reorder columns: Player, Total Speedups Used, non-Testronius items, then Testronius items
+                    testronius_cols = [col for col in usage_df.columns if 'Testronius' in col]
+                    non_testronius_cols = [col for col in usage_df.columns if col not in testronius_cols and col != 'Player' and col != 'Total Speedups Used']
+                    column_order = ['Player', 'Total Speedups Used'] + non_testronius_cols + testronius_cols
+                    usage_df = usage_df[column_order]
+                    
+                    # Format columns
+                    for col in usage_df.columns:
+                        if col != 'Player':
+                            usage_df[col] = usage_df[col].apply(lambda x: int(x) if pd.notna(x) else 0)
+                    
+                    st.dataframe(usage_df, width='stretch', hide_index=True)
+                else:
+                    st.info("No speedup usage detected in the last 24 hours.")
+            else:
+                st.info("Player data not available for speedup usage calculation.")
+        else:
+            st.info("No data available from approximately 24 hours ago for comparison.")

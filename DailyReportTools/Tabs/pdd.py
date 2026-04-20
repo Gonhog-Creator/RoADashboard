@@ -859,7 +859,7 @@ def render_alts_detection(player_df):
                 'IP Address': ip,
                 'Alt Accounts': ', '.join(alt_players['username'].tolist()),
                 'Alt Powers': ', '.join([f"{int(p):,}" for p in alt_players['power'].tolist()]),
-                'Alt Alliances': ', '.join(alt_players['alliance_name'].tolist()),
+                'Alt Alliances': ', '.join([str(a) if pd.notna(a) else 'None' for a in alt_players['alliance_name'].tolist()]),
                 'Total Alts': len(alt_players)
             }
             alts_data.append(main_data)
@@ -872,7 +872,7 @@ def render_alts_detection(player_df):
         alts_df = alts_df.sort_values('Total Alts', ascending=False)
         
         st.markdown(f"**Found {len(alts_df)} IP addresses with multiple accounts**")
-        st.dataframe(alts_df, width='stretch', hide_index=True, use_container_width=True)
+        st.dataframe(alts_df, width='stretch', hide_index=True)
         
         # Add detailed breakdown
         st.markdown("---")

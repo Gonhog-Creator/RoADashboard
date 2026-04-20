@@ -82,7 +82,9 @@ class PlayerDataAnalyzer:
             'alliance.csv',
             'user.csv',
             'effect.csv',
-            'battle.csv'
+            'battle.csv',
+            'shop_item_purchase.csv',
+            'store_purchase.csv'
         ]
         
         for csv_file in csv_files:

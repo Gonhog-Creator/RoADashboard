@@ -286,7 +286,7 @@ def render_alliance_selection(alliance_names, current_stats, filtered_df):
             fig.update_traces(line=dict(width=2), marker=dict(size=6))
             fig.update_yaxes(tickformat=',')
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("No historical power data available for this alliance")
         

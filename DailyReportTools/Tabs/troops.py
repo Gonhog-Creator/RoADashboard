@@ -6,6 +6,118 @@ from plotly.subplots import make_subplots
 import json
 from cache_manager import cache_manager
 
+@st.fragment
+def render_troops_over_time_chart(filtered_df, latest_data):
+    """Fragment for Troops Over Time chart - only reruns when checkboxes change"""
+    st.markdown("#### Troops Over Time")
+    
+    # Get comprehensive data from cache for troops over time chart
+    if 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None:
+        player_df = latest_data['raw_player_data']
+        
+        # Get troop columns from JSON or old format
+        if 'troops_json' in player_df.columns:
+            # Parse troops from JSON format
+            all_troop_types = set()
+            for _, player_row in player_df.iterrows():
+                try:
+                    troops_dict = json.loads(player_row['troops_json'])
+                    all_troop_types.update(troops_dict.keys())
+                except:
+                    continue
+            troop_columns = [f'troop_{troop_type}' for troop_type in all_troop_types]
+        else:
+            # Fallback to old format (individual troop columns)
+            troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
+        
+        if troop_columns:
+            # Create checkboxes for troop selection
+            troop_names = [col.replace('troop_', '').replace('_', ' ').title() for col in troop_columns]
+            
+            # Filter out Great Dragon and Water Dragon
+            troop_names = [t for t in troop_names if t not in ["Great Dragon", "Water Dragon"]]
+            
+            st.markdown("**Select troop types to display:**")
+            
+            # Display checkboxes in columns to fill screen width (4 columns)
+            cols_per_row = 4
+            selected_troops = []
+            
+            for i, troop in enumerate(troop_names):
+                col_idx = i % cols_per_row
+                if i % cols_per_row == 0:
+                    cols = st.columns(cols_per_row)
+                
+                with cols[col_idx]:
+                    # Only Conscripts selected by default
+                    is_selected = st.checkbox(
+                        troop,
+                        value=(troop == "Conscript"),
+                        key=f"troop_checkbox_{troop.replace(' ', '_')}"
+                    )
+                    if is_selected:
+                        selected_troops.append(troop)
+            
+            if selected_troops:
+                # Collect troops data over time
+                troops_over_time = []
+                
+                for _, row in filtered_df.iterrows():
+                    if 'troops_data' in row and row['troops_data'] and not isinstance(row['troops_data'], (int, float)):
+                        troops_data = row['troops_data']
+                        date = row['date']
+                        
+                        if isinstance(troops_data, dict):
+                            troop_entry = {'Date': date}
+                            
+                            for troop_name, troop_value in troops_data.items():
+                                if isinstance(troop_value, str) or troop_name == 'unique_troop_types':
+                                    continue
+                                
+                                # Filter out Great Dragon and Water Dragon
+                                if any(dragon in troop_name.lower() for dragon in ['great_dragon', 'water_dragon']):
+                                    continue
+                                
+                                display_name = troop_name.replace('_', ' ').title()
+                                
+                                if display_name in selected_troops:
+                                    if hasattr(troop_value, 'item'):
+                                        troop_value = troop_value.item()
+                                    troop_entry[display_name] = troop_value
+                            
+                            troops_over_time.append(troop_entry)
+                
+                if troops_over_time:
+                    troops_over_time_df = pd.DataFrame(troops_over_time)
+                    troops_over_time_df = troops_over_time_df.sort_values('Date')
+                    
+                    # Create line chart
+                    fig = go.Figure()
+                    
+                    for troop in selected_troops:
+                        if troop in troops_over_time_df.columns:
+                            fig.add_trace(
+                                go.Scatter(
+                                    x=troops_over_time_df['Date'],
+                                    y=troops_over_time_df[troop],
+                                    mode='lines+markers',
+                                    name=troop
+                                )
+                            )
+                    
+                    fig.update_layout(
+                        title="Troop Count Over Time",
+                        xaxis_title="Date",
+                        yaxis_title="Number of Troops",
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, width='stretch')
+                else:
+                    st.warning("No troops data available over time")
+            else:
+                st.info("Please select at least one troop type to display")
+
 def parse_waver_troops(metadata):
     """Parse waver troops from player metadata"""
     if pd.isna(metadata) or not metadata:
@@ -237,115 +349,8 @@ def create_troops_tab(filtered_df):
                             
                             col_idx = (col_idx + 1) % 3
     
-    # Troops Over Time Chart
-    st.markdown("#### Troops Over Time")
-    
-    # Get comprehensive data from cache for troops over time chart
-    if 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None:
-        player_df = latest_data['raw_player_data']
-        
-        # Get troop columns from JSON or old format
-        if 'troops_json' in player_df.columns:
-            # Parse troops from JSON format
-            all_troop_types = set()
-            for _, player_row in player_df.iterrows():
-                try:
-                    troops_dict = json.loads(player_row['troops_json'])
-                    all_troop_types.update(troops_dict.keys())
-                except:
-                    continue
-            troop_columns = [f'troop_{troop_type}' for troop_type in all_troop_types]
-        else:
-            # Fallback to old format (individual troop columns)
-            troop_columns = [col for col in player_df.columns if col.startswith('troop_') and col != 'unique_troop_types']
-        
-        if troop_columns:
-            # Create checkboxes for troop selection
-            troop_names = [col.replace('troop_', '').replace('_', ' ').title() for col in troop_columns]
-            
-            # Filter out Great Dragon and Water Dragon
-            troop_names = [t for t in troop_names if t not in ["Great Dragon", "Water Dragon"]]
-            
-            st.markdown("**Select troop types to display:**")
-            
-            # Display checkboxes in columns to fill screen width (4 columns)
-            cols_per_row = 4
-            selected_troops = []
-            
-            for i, troop in enumerate(troop_names):
-                col_idx = i % cols_per_row
-                if i % cols_per_row == 0:
-                    cols = st.columns(cols_per_row)
-                
-                with cols[col_idx]:
-                    # Only Conscripts selected by default
-                    is_selected = st.checkbox(
-                        troop,
-                        value=(troop == "Conscript"),
-                        key=f"troop_checkbox_{troop.replace(' ', '_')}"
-                    )
-                    if is_selected:
-                        selected_troops.append(troop)
-            
-            if selected_troops:
-                # Collect troops data over time
-                troops_over_time = []
-                
-                for _, row in filtered_df.iterrows():
-                    if 'troops_data' in row and row['troops_data'] and not isinstance(row['troops_data'], (int, float)):
-                        troops_data = row['troops_data']
-                        date = row['date']
-                        
-                        if isinstance(troops_data, dict):
-                            troop_entry = {'Date': date}
-                            
-                            for troop_name, troop_value in troops_data.items():
-                                if isinstance(troop_value, str) or troop_name == 'unique_troop_types':
-                                    continue
-                                
-                                # Filter out Great Dragon and Water Dragon
-                                if any(dragon in troop_name.lower() for dragon in ['great_dragon', 'water_dragon']):
-                                    continue
-                                
-                                display_name = troop_name.replace('_', ' ').title()
-                                
-                                if display_name in selected_troops:
-                                    if hasattr(troop_value, 'item'):
-                                        troop_value = troop_value.item()
-                                    troop_entry[display_name] = troop_value
-                            
-                            troops_over_time.append(troop_entry)
-                
-                if troops_over_time:
-                    troops_over_time_df = pd.DataFrame(troops_over_time)
-                    troops_over_time_df = troops_over_time_df.sort_values('Date')
-                    
-                    # Create line chart
-                    fig = go.Figure()
-                    
-                    for troop in selected_troops:
-                        if troop in troops_over_time_df.columns:
-                            fig.add_trace(
-                                go.Scatter(
-                                    x=troops_over_time_df['Date'],
-                                    y=troops_over_time_df[troop],
-                                    mode='lines+markers',
-                                    name=troop
-                                )
-                            )
-                    
-                    fig.update_layout(
-                        title="Troop Count Over Time",
-                        xaxis_title="Date",
-                        yaxis_title="Number of Troops",
-                        height=400
-                    )
-                    
-                    st.plotly_chart(fig, width='stretch')
-                else:
-                    st.warning("No troops data available over time")
-            else:
-                st.info("Please select at least one troop type to display")
+    # Render troops over time chart in fragment for instant checkbox updates
+    render_troops_over_time_chart(filtered_df, latest_data)
     
     # Top 10 Players with Largest Armies
     st.markdown("#### Top 10 Players by Army Size")

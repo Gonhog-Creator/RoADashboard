@@ -105,7 +105,7 @@ def display_quest_completion(player_df):
             if quest_summary:
                 summary_df = pd.DataFrame(quest_summary)
                 summary_df = summary_df.sort_values('Completion Rate', ascending=False)
-                st.dataframe(summary_df, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(summary_df, width='stretch', hide_index=True)
         else:
             st.info("No quest information available in quest_metadata")
     elif 'quest_details' in player_df.columns:
@@ -157,7 +157,7 @@ def display_quest_completion(player_df):
             
             summary_df = pd.DataFrame(quest_summary)
             summary_df = summary_df.sort_values('Completion Rate', ascending=False)
-            st.dataframe(summary_df, width='stretch', hide_index=True, use_container_width=True)
+            st.dataframe(summary_df, width='stretch', hide_index=True)
         else:
             st.info("No quest information available")
 

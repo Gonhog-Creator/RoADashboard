@@ -38,9 +38,28 @@ def create_daily_report_tab(filtered_df):
         # Sort by date (most recent first)
         comprehensive_data_list = sorted(comprehensive_data_list, key=lambda x: x['date'], reverse=True)
         
-        # Get current and previous reports
+        # Get current report (most recent)
         current_data = comprehensive_data_list[0]
-        previous_data = comprehensive_data_list[1]
+        
+        # Find report from approximately 24 hours ago
+        from datetime import timedelta
+        target_time = current_data['date'] - timedelta(hours=24)
+        
+        # Find the closest report to 24 hours ago
+        closest_24h_ago = None
+        min_diff = float('inf')
+        for data in comprehensive_data_list[1:]:  # Skip the current report
+            diff = abs((data['date'] - target_time).total_seconds())
+            if diff < min_diff:
+                min_diff = diff
+                closest_24h_ago = data
+        
+        # Use the closest report to 24 hours ago if found within reasonable range
+        if closest_24h_ago is not None and min_diff < 3600 * 12:  # Within 12 hours of target
+            previous_data = closest_24h_ago
+        else:
+            # Fallback to the second most recent report if no suitable 24h data
+            previous_data = comprehensive_data_list[1]
         
         current_df = current_data['raw_player_data']
         previous_df = previous_data['raw_player_data']
@@ -160,7 +179,7 @@ def create_daily_report_tab(filtered_df):
         if not resource_change_df.empty:
             resource_change_df = resource_change_df.sort_values('Change', ascending=False)
             resource_change_df['Change'] = resource_change_df['Change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
-            st.dataframe(resource_change_df, width='stretch', hide_index=True, use_container_width=True)
+            st.dataframe(resource_change_df, width='stretch', hide_index=True)
         
         st.markdown("---")
         
@@ -221,7 +240,7 @@ def create_daily_report_tab(filtered_df):
             troop_change_df = pd.DataFrame(troop_changes)
             troop_change_df = troop_change_df.sort_values('Change', ascending=False)
             troop_change_df['Change'] = troop_change_df['Change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
-            st.dataframe(troop_change_df, width='stretch', hide_index=True, use_container_width=True)
+            st.dataframe(troop_change_df, width='stretch', hide_index=True)
         
         st.markdown("---")
         
@@ -279,7 +298,7 @@ def create_daily_report_tab(filtered_df):
                 daily_attackers['daily_manual'] = daily_attackers['daily_manual'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 daily_attackers = daily_attackers[['username', 'daily_total', 'daily_autowaver', 'daily_manual']]
                 daily_attackers.columns = ['Player', 'Daily Total', 'Daily Autowaver', 'Daily Manual']
-                st.dataframe(daily_attackers, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(daily_attackers, width='stretch', hide_index=True)
             
             # Target types aggregation (daily changes)
             target_types_current = defaultdict(int)
@@ -314,7 +333,7 @@ def create_daily_report_tab(filtered_df):
                     {'Target': k, 'Daily Attacks': format_comma(v)}
                     for k, v in sorted(target_types_daily.items(), key=lambda x: x[1], reverse=True)
                 ])
-                st.dataframe(target_df, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(target_df, width='stretch', hide_index=True)
         else:
             st.info("Battle statistics not available in current CSV files. Run sync tool to regenerate CSV files with battle data.")
         
@@ -368,7 +387,7 @@ def create_daily_report_tab(filtered_df):
                 daily_purchasers['daily_store'] = daily_purchasers['daily_store'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 daily_purchasers = daily_purchasers[['username', 'daily_total', 'daily_shop', 'daily_store']]
                 daily_purchasers.columns = ['Player', 'Daily Total', 'Daily Shop', 'Daily Store']
-                st.dataframe(daily_purchasers, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(daily_purchasers, width='stretch', hide_index=True)
         else:
             st.info("Purchase statistics not available in current CSV files. Run sync tool to regenerate CSV files with purchase data.")
         
@@ -401,7 +420,7 @@ def create_daily_report_tab(filtered_df):
                 top_gainers['power_current'] = top_gainers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_gainers['power_change'] = top_gainers['power_change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
                 top_gainers.columns = ['Player', 'Alliance', 'Prev', 'Curr', 'Change']
-                st.dataframe(top_gainers, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(top_gainers, width='stretch', hide_index=True)
             
             st.markdown("**📉 Top Power Losers**")
             merged_df_sorted_losers = power_merged_df[power_merged_df['power_change'].notna()].sort_values('power_change', ascending=True)
@@ -413,7 +432,7 @@ def create_daily_report_tab(filtered_df):
                 top_losers['power_current'] = top_losers['power_current'].apply(lambda x: format_comma(x) if pd.notna(x) else '0')
                 top_losers['power_change'] = top_losers['power_change'].apply(lambda x: format_comma(x))
                 top_losers.columns = ['Player', 'Alliance', 'Prev', 'Curr', 'Change']
-                st.dataframe(top_losers, width='stretch', hide_index=True, use_container_width=True)
+                st.dataframe(top_losers, width='stretch', hide_index=True)
         
         with col2:
             st.markdown("**🏰 Alliance Growth**")
@@ -437,7 +456,7 @@ def create_daily_report_tab(filtered_df):
                 if not alliance_change_df.empty:
                     alliance_change_df['Current'] = alliance_change_df['Current'].apply(lambda x: format_comma(x))
                     alliance_change_df['Change'] = alliance_change_df['Change'].apply(lambda x: f"+{format_comma(x)}" if x > 0 else format_comma(x))
-                    st.dataframe(alliance_change_df, width='stretch', hide_index=True, use_container_width=True, height=500)
+                    st.dataframe(alliance_change_df, width='stretch', hide_index=True, height=500)
             else:
                 st.info("Alliance data not available")
     

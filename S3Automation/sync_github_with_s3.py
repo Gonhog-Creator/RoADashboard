@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "DatabaseParser"))
 from player_data_analyzer import PlayerDataAnalyzer
 
 class GitHubS3Sync:
-    def __init__(self, force_reprocess=True):
+    def __init__(self, force_reprocess=False):
         # Load secrets from secrets.json first
         secrets = self.load_secrets()
         if secrets:
@@ -45,7 +45,7 @@ class GitHubS3Sync:
         self.github_repo = os.environ.get('GITHUB_REPO', 'roarealmdata')
         self.github_owner = os.environ.get('GITHUB_OWNER')
         
-        # Force reprocess is now the default behavior
+        # Force reprocess is now opt-in (default: only process new files)
         self.force_reprocess = force_reprocess
         
         # Initialize S3 client
@@ -341,12 +341,12 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description='Sync GitHub repository with S3 database')
-    parser.add_argument('--no-force', action='store_true', help='Disable force reprocess (only process new files)')
+    parser.add_argument('--force', action='store_true', help='Force reprocess all files (default: only process new files)')
     
     args = parser.parse_args()
     
-    # Force reprocess is default, --no-force disables it
-    force_reprocess = not args.no_force
+    # Only process new files by default, --force enables full reprocess
+    force_reprocess = args.force
     
     sync = GitHubS3Sync(force_reprocess=force_reprocess)
     sync.sync()
