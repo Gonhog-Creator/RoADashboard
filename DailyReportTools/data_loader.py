@@ -524,7 +524,17 @@ def load_csv_files_from_github():
             return pd.DataFrame(), 0
         
         files = response.json()
-        csv_files = [f for f in files if f.get('name', '').endswith('.csv')]
+        csv_files = []
+        
+        # Check root directory for CSV files (backward compatibility)
+        for f in files:
+            if f.get('name', '').endswith('.csv') and f.get('type') == 'file':
+                csv_files.append(f)
+            elif f.get('type') == 'dir':
+                # Check if this looks like a monthly directory (contains digits)
+                # Recursively check subdirectories for CSV files
+                sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
         
         if not csv_files:
             st.warning("⚠️ No CSV files found in remote repository")
@@ -621,6 +631,38 @@ def load_csv_files_from_github():
         df[col] = col_data
     
     return df, new_parsed_count
+
+def get_csv_files_from_directory(dir_path, owner, repo, github_token, headers):
+    """Recursively get CSV files from a GitHub directory"""
+    try:
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{dir_path}"
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            return []
+        
+        files = response.json()
+        csv_files = []
+        
+        for f in files:
+            if f.get('name', '').endswith('.csv') and f.get('type') == 'file':
+                # Store the full path in the name for identification
+                f_with_path = f.copy()
+                # Ensure dir_path is a string
+                dir_path_str = str(dir_path) if dir_path is not None else ''
+                f_with_path['name'] = f"{dir_path_str}/{f['name']}"
+                f_with_path['download_url'] = f.get('download_url', '')
+                csv_files.append(f_with_path)
+            elif f.get('type') == 'dir':
+                # Recursively check subdirectories
+                sub_files = get_csv_files_from_directory(f"{dir_path}/{f['name']}", owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
+        
+        return csv_files
+    except Exception as e:
+        print(f"Error getting files from directory {dir_path}: {e}")
+        return []
 
 def load_csv_files(st, force_reload=False):
     """Load and parse all CSV files from GitHub (no local files)"""

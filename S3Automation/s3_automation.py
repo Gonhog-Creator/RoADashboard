@@ -125,6 +125,20 @@ class S3Automation:
             print(f"Error processing tar file: {e}")
             return None
     
+    def get_month_from_filename(self, filename):
+        """Extract month and year from filename to determine bucket"""
+        # Expected format: comprehensive_player_data_2026-04-22_160231.csv
+        # Extract date part: 2026-04-22
+        if 'comprehensive_player_data_' in filename:
+            date_part = filename.replace('comprehensive_player_data_', '').split('_')[0]
+            try:
+                date_obj = datetime.strptime(date_part, '%Y-%m-%d')
+                return date_obj.strftime('%m.%Y')
+            except ValueError:
+                # Fallback to current month if parsing fails
+                return datetime.now().strftime('%m.%Y')
+        return datetime.now().strftime('%m.%Y')
+    
     def push_to_github(self, csv_file):
         """Push the CSV file to GitHub repository"""
         print(f"\n=== GitHub Push Debug Info ===")
@@ -155,12 +169,16 @@ class S3Automation:
             csv_content_b64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
             print(f"Base64 encoded size: {len(csv_content_b64)} bytes")
             
-            # Generate filename
+            # Generate filename and monthly path
             csv_filename = os.path.basename(csv_file)
+            month_bucket = self.get_month_from_filename(csv_filename)
+            github_path = f"{month_bucket}/{csv_filename}"
             print(f"Target filename: {csv_filename}")
+            print(f"Monthly bucket: {month_bucket}")
+            print(f"GitHub path: {github_path}")
             
             # GitHub API URL
-            api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{csv_filename}"
+            api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{github_path}"
             print(f"GitHub API URL: {api_url}")
             
             # Check if file already exists
@@ -179,7 +197,7 @@ class S3Automation:
                 github_sha = existing_data['sha']
                 print(f"File exists with SHA: {github_sha}")
                 data = {
-                    'message': f'Update {csv_filename} - {datetime.now().isoformat()}',
+                    'message': f'Update {month_bucket}/{csv_filename} - {datetime.now().isoformat()}',
                     'content': csv_content_b64,
                     'sha': github_sha,
                     'branch': 'main'
@@ -189,7 +207,7 @@ class S3Automation:
                 # File doesn't exist, create it
                 print(f"File does not exist (status {response.status_code}), creating new file")
                 data = {
-                    'message': f'Add {csv_filename} - {datetime.now().isoformat()}',
+                    'message': f'Add {month_bucket}/{csv_filename} - {datetime.now().isoformat()}',
                     'content': csv_content_b64,
                     'branch': 'main'
                 }
@@ -199,7 +217,7 @@ class S3Automation:
             print(f"PUT response body: {response.text[:500]}")
             
             if response.status_code in [200, 201]:
-                print(f"✓ Successfully pushed {csv_filename} to GitHub")
+                print(f"✓ Successfully pushed {month_bucket}/{csv_filename} to GitHub")
                 return True
             else:
                 print(f"✗ Error pushing to GitHub: {response.status_code} - {response.text}")
@@ -211,7 +229,7 @@ class S3Automation:
             return False
     
     def get_existing_github_files(self):
-        """Get list of existing CSV files in the GitHub repository"""
+        """Get list of existing CSV files in the GitHub repository with their full paths"""
         if not self.github_token or not self.github_owner or not self.github_repo:
             print("GitHub credentials not configured. Cannot check existing files.")
             return set()
@@ -228,8 +246,19 @@ class S3Automation:
             response = requests.get(api_url, headers=headers)
             
             if response.status_code == 200:
-                files = response.json()
-                existing_files = {f['name'] for f in files if f['name'].endswith('.csv')}
+                root_files = response.json()
+                existing_files = set()
+                
+                # Check root directory for CSV files (backward compatibility)
+                for f in root_files:
+                    if f['name'].endswith('.csv') and f['type'] == 'file':
+                        existing_files.add(f['name'])
+                    elif f['type'] == 'dir':
+                        # Check if this looks like a monthly directory (contains digits)
+                        # Recursively check subdirectories
+                        sub_files = self.get_files_in_directory(f['name'])
+                        existing_files.update(sub_files)
+                
                 print(f"Found {len(existing_files)} existing CSV files in repository")
                 return existing_files
             else:
@@ -239,17 +268,64 @@ class S3Automation:
             print(f"Error getting existing files from GitHub: {e}")
             return set()
     
+    def get_files_in_directory(self, dir_path):
+        """Recursively get CSV files from a directory"""
+        try:
+            import requests
+            
+            api_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{dir_path}"
+            headers = {
+                'Authorization': f'token {self.github_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            response = requests.get(api_url, headers=headers)
+            
+            if response.status_code == 200:
+                files = response.json()
+                csv_files = set()
+                
+                for f in files:
+                    if f['name'].endswith('.csv') and f['type'] == 'file':
+                        # Store as full path: month/filename.csv
+                        csv_files.add(f"{dir_path}/{f['name']}")
+                    elif f['type'] == 'dir':
+                        # Recursively check subdirectories
+                        sub_files = self.get_files_in_directory(f"{dir_path}/{f['name']}")
+                        csv_files.update(sub_files)
+                
+                return csv_files
+            else:
+                print(f"Error getting files in directory {dir_path}: {response.status_code}")
+                return set()
+        except Exception as e:
+            print(f"Error getting files from directory {dir_path}: {e}")
+            return set()
+    
     def check_structure_change(self, new_csv_file):
         """Check if the CSV structure has changed by comparing columns"""
         try:
-            import pandas as pd
             import requests
             import base64
             import io
             
+            # Try to use pandas first, fallback to manual parsing if not available
+            try:
+                import pandas as pd
+                use_pandas = True
+            except ImportError:
+                use_pandas = False
+                print("pandas not available, using manual CSV parsing")
+            
             # Read the new CSV to get its columns
-            new_df = pd.read_csv(new_csv_file, nrows=1)
-            new_columns = set(new_df.columns)
+            if use_pandas:
+                new_df = pd.read_csv(new_csv_file, nrows=1)
+                new_columns = set(new_df.columns)
+            else:
+                # Manual CSV parsing - just read the first line
+                with open(new_csv_file, 'r') as f:
+                    first_line = f.readline().strip()
+                    new_columns = set(col.strip('"') for col in first_line.split(','))
             
             # Get existing CSV files from GitHub
             existing_files = self.get_existing_github_files()
@@ -269,8 +345,15 @@ class S3Automation:
             if response.status_code == 200:
                 file_data = response.json()
                 content = base64.b64decode(file_data['content'])
-                existing_df = pd.read_csv(io.StringIO(content.decode('utf-8')), nrows=1)
-                existing_columns = set(existing_df.columns)
+                content_str = content.decode('utf-8')
+                
+                if use_pandas:
+                    existing_df = pd.read_csv(io.StringIO(content_str), nrows=1)
+                    existing_columns = set(existing_df.columns)
+                else:
+                    # Manual CSV parsing - just read the first line
+                    first_line = content_str.split('\n')[0].strip()
+                    existing_columns = set(col.strip('"') for col in first_line.split(','))
                 
                 # Compare columns
                 if new_columns != existing_columns:
@@ -296,10 +379,12 @@ class S3Automation:
             shutil.rmtree(self.temp_dir)
             print(f"Cleaned up temporary directory: {self.temp_dir}")
     
-    def run(self):
+    def run(self, force=False):
         """Main automation loop"""
         try:
             print(f"Starting S3 automation at {datetime.now().isoformat()}")
+            if force:
+                print("Force mode enabled - will regenerate all files")
             
             # List files in S3
             files = self.list_s3_files()
@@ -311,10 +396,11 @@ class S3Automation:
             
             # Get existing files from GitHub
             existing_files = self.get_existing_github_files()
+            print(f"Found {len(existing_files)} existing CSV files in repository")
             
             # Check for structure changes by processing the first file as a sample
             structure_changed = False
-            if tar_files and existing_files:
+            if tar_files and existing_files and not force:
                 print("Checking for CSV structure changes...")
                 # Process the first file as a sample
                 sample_tar = tar_files[0]
@@ -326,6 +412,9 @@ class S3Automation:
                         if structure_changed:
                             print("Structure change detected - will regenerate ALL files")
                             existing_files = set()  # Clear existing files to force reprocessing
+            elif force:
+                print("Force mode - skipping structure check and regenerating all files")
+                existing_files = set()  # Clear existing files to force reprocessing
             
             # Process all tar.gz files
             if tar_files:
@@ -348,8 +437,18 @@ class S3Automation:
                             time_part = parts[1].replace('-', '')  # 15-19-05 -> 151905
                             expected_csv = f"comprehensive_player_data_{date_part}_{time_part}.csv"
                             
-                            # Check if this file already exists in repository
-                            if expected_csv in existing_files:
+                            # Calculate expected monthly path
+                            try:
+                                date_obj = datetime.strptime(date_part, '%Y-%m-%d')
+                                month_bucket = date_obj.strftime('%m.%Y')
+                                expected_path = f"{month_bucket}/{expected_csv}"
+                            except ValueError:
+                                # Fallback to current month if parsing fails
+                                month_bucket = datetime.now().strftime('%m.%Y')
+                                expected_path = f"{month_bucket}/{expected_csv}"
+                            
+                            # Check if this file already exists in repository (check both old and new formats)
+                            if expected_csv in existing_files or expected_path in existing_files:
                                 print(f"Skipping {tar_filename} - {expected_csv} already exists in repository")
                                 skipped_count += 1
                                 continue
@@ -387,5 +486,11 @@ class S3Automation:
         print(f"S3 automation completed at {datetime.now().isoformat()}")
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description='S3 Automation Script')
+    parser.add_argument('--force', action='store_true', 
+                       help='Force regeneration of all files, ignoring existing files')
+    args = parser.parse_args()
+    
     automation = S3Automation()
-    automation.run()
+    automation.run(force=args.force)
