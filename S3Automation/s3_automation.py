@@ -302,77 +302,6 @@ class S3Automation:
             print(f"Error getting files from directory {dir_path}: {e}")
             return set()
     
-    def check_structure_change(self, new_csv_file):
-        """Check if the CSV structure has changed by comparing columns"""
-        try:
-            import requests
-            import base64
-            import io
-            
-            # Try to use pandas first, fallback to manual parsing if not available
-            try:
-                import pandas as pd
-                use_pandas = True
-            except ImportError:
-                use_pandas = False
-                print("pandas not available, using manual CSV parsing")
-            
-            # Read the new CSV to get its columns
-            if use_pandas:
-                new_df = pd.read_csv(new_csv_file, nrows=1)
-                new_columns = set(new_df.columns)
-            else:
-                # Manual CSV parsing - just read the first line
-                with open(new_csv_file, 'r') as f:
-                    first_line = f.readline().strip()
-                    new_columns = set(col.strip('"') for col in first_line.split(','))
-            
-            # Get existing CSV files from GitHub
-            existing_files = self.get_existing_github_files()
-            if not existing_files:
-                print("No existing files to compare - treating as structure change")
-                return True
-            
-            # Get the first existing CSV file
-            sample_file = list(existing_files)[0]
-            print(f"Comparing structure with existing file: {sample_file}")
-            
-            # Download the sample file
-            sample_url = f"https://api.github.com/repos/{self.github_owner}/{self.github_repo}/contents/{sample_file}"
-            headers = {'Authorization': f'token {self.github_token}'}
-            response = requests.get(sample_url, headers=headers)
-            
-            if response.status_code == 200:
-                file_data = response.json()
-                content = base64.b64decode(file_data['content'])
-                content_str = content.decode('utf-8')
-                
-                if use_pandas:
-                    existing_df = pd.read_csv(io.StringIO(content_str), nrows=1)
-                    existing_columns = set(existing_df.columns)
-                else:
-                    # Manual CSV parsing - just read the first line
-                    first_line = content_str.split('\n')[0].strip()
-                    existing_columns = set(col.strip('"') for col in first_line.split(','))
-                
-                # Compare columns
-                if new_columns != existing_columns:
-                    print(f"Structure change detected!")
-                    print(f"New columns: {len(new_columns)}")
-                    print(f"Existing columns: {len(existing_columns)}")
-                    print(f"Added columns: {new_columns - existing_columns}")
-                    print(f"Removed columns: {existing_columns - new_columns}")
-                    return True
-                else:
-                    print("No structure change detected")
-                    return False
-            else:
-                print(f"Could not download sample file for comparison - treating as structure change")
-                return True
-        except Exception as e:
-            print(f"Error checking structure change: {e}")
-            return True  # Treat error as structure change to be safe
-    
     def cleanup(self):
         """Clean up temporary files"""
         if os.path.exists(self.temp_dir):
@@ -398,22 +327,8 @@ class S3Automation:
             existing_files = self.get_existing_github_files()
             print(f"Found {len(existing_files)} existing CSV files in repository")
             
-            # Check for structure changes by processing the first file as a sample
-            structure_changed = False
-            if tar_files and existing_files and not force:
-                print("Checking for CSV structure changes...")
-                # Process the first file as a sample
-                sample_tar = tar_files[0]
-                sample_tar_path = os.path.join(self.temp_dir, os.path.basename(sample_tar['key']))
-                if self.download_file(sample_tar['key'], sample_tar_path):
-                    sample_csv = self.process_tar_file(sample_tar_path)
-                    if sample_csv:
-                        structure_changed = self.check_structure_change(sample_csv)
-                        if structure_changed:
-                            print("Structure change detected - will regenerate ALL files")
-                            existing_files = set()  # Clear existing files to force reprocessing
-            elif force:
-                print("Force mode - skipping structure check and regenerating all files")
+            if force:
+                print("Force mode - regenerating all files")
                 existing_files = set()  # Clear existing files to force reprocessing
             
             # Process all tar.gz files
