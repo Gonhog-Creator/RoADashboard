@@ -363,7 +363,7 @@ class S3Automation:
                         if len(parts) >= 2:
                             date_part = parts[0]  # 2026-04-11
                             time_part = parts[1].replace('-', '')  # 15-19-05 -> 151905
-                            expected_csv = f"comprehensive_player_data_{date_part}_{time_part}.csv"
+                            expected_csv = f"comprehensive_player_data_{date_part}_{time_part}.csv.gz"
                             
                             # Calculate expected monthly path
                             try:
