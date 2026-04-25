@@ -5,7 +5,7 @@ This system automatically processes hourly game data backups from an S3 bucket a
 ## Architecture
 
 - **S3 Bucket**: `rise-of-atlantis-csv-exports` (OVH Cloud S3 in eu-west-par)
-- **Processing**: Uses existing `player_data_analyzer.py` to parse tar.gz backups
+- **Processing**: Uses local `player_data_analyzer.py` to parse tar.gz backups
 - **Deployment**: GitHub Actions workflow running hourly
 - **Output**: Comprehensive CSV files pushed to roarealmdata repository
 
@@ -47,9 +47,9 @@ The automation pushes CSV files to the `roarealmdata` repository. Ensure:
 
 ## File Naming Convention
 
-Output files follow the pattern: `comprehensive_player_data_YYYY-MM-DD_HHMMSS.csv`
+Output files follow the pattern: `comprehensive_player_data_YYYY-MM-DD_HHMMSS.csv.gz`
 
-Example: `comprehensive_player_data_2026-04-11_020500.csv`
+Example: `comprehensive_player_data_2026-04-11_020500.csv.gz`
 
 ## Manual Testing
 

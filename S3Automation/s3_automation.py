@@ -14,8 +14,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-# Add parent directory to path to import player_data_analyzer
-sys.path.insert(0, str(Path(__file__).parent.parent / "DatabaseParser"))
+# Import player_data_analyzer from local directory
 from player_data_analyzer import PlayerDataAnalyzer
 
 class S3Automation:
@@ -254,7 +253,7 @@ class S3Automation:
                 
                 # Check root directory for CSV files (backward compatibility)
                 for f in root_files:
-                    if f['name'].endswith('.csv') and f['type'] == 'file':
+                    if (f['name'].endswith('.csv') or f['name'].endswith('.csv.gz')) and f['type'] == 'file':
                         existing_files.add(f['name'])
                     elif f['type'] == 'dir':
                         # Check if this looks like a monthly directory (contains digits)
@@ -289,7 +288,7 @@ class S3Automation:
                 csv_files = set()
                 
                 for f in files:
-                    if f['name'].endswith('.csv') and f['type'] == 'file':
+                    if (f['name'].endswith('.csv') or f['name'].endswith('.csv.gz')) and f['type'] == 'file':
                         # Store as full path: month/filename.csv
                         csv_files.add(f"{dir_path}/{f['name']}")
                     elif f['type'] == 'dir':
