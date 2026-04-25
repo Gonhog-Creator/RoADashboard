@@ -11,6 +11,7 @@ import os
 import json
 import shutil
 import hashlib
+import gzip
 from collections import defaultdict
 from datetime import datetime
 
@@ -749,7 +750,7 @@ class PlayerDataAnalyzer:
         return comprehensive_data, item_registry, troop_registry
     
     def write_csv(self, data, filename):
-        """Write data to CSV file with validation"""
+        """Write data to CSV file with gzip compression and validation"""
         if not data:
             print("No data to write!")
             return
@@ -768,7 +769,9 @@ class PlayerDataAnalyzer:
         if 'parser_version' not in fieldnames:
             fieldnames.append('parser_version')
         
-        with open(filename, 'w', newline='', encoding='utf-8') as f:
+        # Write to gzip-compressed CSV
+        gz_filename = filename + '.gz'
+        with gzip.open(gz_filename, 'wt', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             # Add parser version to each row
@@ -776,10 +779,14 @@ class PlayerDataAnalyzer:
                 row['parser_version'] = PARSER_VERSION
             writer.writerows(data)
         
-        # Validate output file size
-        self.validate_output_size(filename, min_size_mb=3.0)
+        # Validate output file size (check compressed file)
+        self.validate_output_size(gz_filename, min_size_mb=0.5)  # Lower threshold for compressed
         
-        print(f"CSV written to {filename} with {len(data)} rows and {len(fieldnames)} columns (parser version {PARSER_VERSION})")
+        # Get file sizes for reporting
+        compressed_size = os.path.getsize(gz_filename)
+        print(f"Compressed CSV written to {gz_filename} with {len(data)} rows and {len(fieldnames)} columns (parser version {PARSER_VERSION})")
+        print(f"Compressed size: {compressed_size:,} bytes")
+        
         return fieldnames
     
     def check_parser_version(self, csv_file):

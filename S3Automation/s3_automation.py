@@ -116,8 +116,8 @@ class S3Automation:
             analyzer = PlayerDataAnalyzer(process_dir)
             analyzer.generate_comprehensive_csv()
             
-            # Find the generated CSV file
-            output_files = list(Path(process_dir).glob("comprehensive_player_data_*.csv"))
+            # Find the generated compressed CSV file
+            output_files = list(Path(process_dir).glob("comprehensive_player_data_*.csv.gz"))
             if output_files:
                 return str(output_files[0])
             return None
@@ -127,9 +127,12 @@ class S3Automation:
     
     def get_month_from_filename(self, filename):
         """Extract month and year from filename to determine bucket"""
-        # Expected format: comprehensive_player_data_2026-04-22_160231.csv
+        # Expected format: comprehensive_player_data_2026-04-22_160231.csv.gz
         # Extract date part: 2026-04-22
         if 'comprehensive_player_data_' in filename:
+            # Remove .gz extension if present
+            if filename.endswith('.gz'):
+                filename = filename[:-3]
             date_part = filename.replace('comprehensive_player_data_', '').split('_')[0]
             try:
                 date_obj = datetime.strptime(date_part, '%Y-%m-%d')
@@ -159,14 +162,14 @@ class S3Automation:
             import requests
             import base64
             
-            # Read CSV file
-            with open(csv_file, 'r') as f:
+            # Read compressed CSV file as binary
+            with open(csv_file, 'rb') as f:
                 csv_content = f.read()
             
-            print(f"CSV file size: {len(csv_content)} bytes")
+            print(f"Compressed CSV file size: {len(csv_content)} bytes")
             
-            # Base64 encode the content
-            csv_content_b64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
+            # Base64 encode the binary content
+            csv_content_b64 = base64.b64encode(csv_content).decode('utf-8')
             print(f"Base64 encoded size: {len(csv_content_b64)} bytes")
             
             # Generate filename and monthly path

@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import gzip
 from datetime import datetime
 import requests
 from io import StringIO
@@ -578,8 +579,13 @@ def load_csv_files_from_github():
                     
                     if csv_response.status_code == 200:
                         status_text.text(f"📊 Parsing: {filename}")
-                        # Parse CSV content directly from memory
-                        csv_content = StringIO(csv_response.text)
+                        # Check if file is compressed
+                        if filename.endswith('.gz'):
+                            # Decompress gzip content
+                            csv_content = StringIO(gzip.decompress(csv_response.content).decode('utf-8'))
+                        else:
+                            # Parse CSV content directly from memory
+                            csv_content = StringIO(csv_response.text)
                         parsed_data = parse_single_file(csv_content, filename)
                         
                         if parsed_data:
