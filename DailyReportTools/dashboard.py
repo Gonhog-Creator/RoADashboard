@@ -31,10 +31,19 @@ def get_latest_commit_version():
     try:
         import subprocess
         import re
+        import os
+        
+        # Get the git repository root directory
+        result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], 
+                              capture_output=True, text=True)
+        if result.returncode == 0:
+            git_root = result.stdout.strip()
+        else:
+            git_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         # Get the commit message
         result = subprocess.run(['git', 'log', '-1', '--pretty=format:%B'], 
-                              capture_output=True, text=True, cwd='.')
+                              capture_output=True, text=True, cwd=git_root)
         if result.returncode == 0:
             commit_message = result.stdout.strip()
             
@@ -45,7 +54,7 @@ def get_latest_commit_version():
         
         # Fallback to commit hash
         result = subprocess.run(['git', 'log', '-1', '--pretty=format:%h'], 
-                              capture_output=True, text=True, cwd='.')
+                              capture_output=True, text=True, cwd=git_root)
         if result.returncode == 0:
             return result.stdout.strip()
         return None
@@ -57,11 +66,20 @@ def get_commit_history():
     try:
         import subprocess
         import re
+        import os
+        
+        # Get the git repository root directory
+        result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], 
+                              capture_output=True, text=True)
+        if result.returncode == 0:
+            git_root = result.stdout.strip()
+        else:
+            git_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
         # Get all commit messages with full body (limit to last 50 commits)
         # Use format that includes subject and body separated by a delimiter
         result = subprocess.run(['git', 'log', '-50', '--pretty=format:===COMMIT_START===%s%n%b===COMMIT_END==='], 
-                              capture_output=True, text=True, cwd='.')
+                              capture_output=True, text=True, cwd=git_root)
         if result.returncode == 0:
             # Split by our custom delimiter
             commits = result.stdout.split('===COMMIT_START===')

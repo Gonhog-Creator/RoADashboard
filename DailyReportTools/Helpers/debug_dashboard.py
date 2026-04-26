@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 from io import StringIO
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import hashlib
 from functools import wraps
@@ -82,8 +82,8 @@ def generate_token(username):
     """Generate JWT token for authenticated user"""
     payload = {
         'username': username,
-        'exp': datetime.utcnow() + timedelta(hours=24),
-        'iat': datetime.utcnow()
+        'exp': datetime.now(timezone.utc) + timedelta(hours=24),
+        'iat': datetime.now(timezone.utc)
     }
     return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
