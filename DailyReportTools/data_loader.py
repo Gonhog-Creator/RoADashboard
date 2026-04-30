@@ -761,3 +761,164 @@ def load_csv_files(st, force_reload=False):
     df, new_parsed_count = load_csv_files_from_github()
     
     return df
+
+def load_all_csv_files_without_limits():
+    """Load and parse all CSV files from GitHub without any raw data limits"""
+    try:
+        # Import here to avoid circular imports
+        import streamlit as st
+        import requests
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import time
+        import gzip
+        from io import StringIO
+        
+        # Get GitHub credentials
+        github_token = None
+        csv_repo_url = None
+        
+        if hasattr(st, 'secrets'):
+            all_secrets = dict(st.secrets)
+            
+            # Try root level first
+            if "github_token" in all_secrets:
+                github_token = st.secrets["github_token"]
+            if "csv_repo_url" in all_secrets:
+                csv_repo_url = st.secrets["csv_repo_url"]
+            
+            # Try admin_users level
+            if not github_token and "admin_users" in all_secrets:
+                admin_users = dict(st.secrets["admin_users"])
+                if "github_token" in admin_users:
+                    github_token = admin_users["github_token"]
+                if "csv_repo_url" in admin_users:
+                    csv_repo_url = admin_users["csv_repo_url"]
+        
+        if not github_token or not csv_repo_url:
+            st.error("❌ GitHub credentials not configured")
+            return pd.DataFrame(), 0
+        
+        # Extract owner and repo from URL
+        if "/tree/" in csv_repo_url:
+            repo_parts = csv_repo_url.split("/tree/")
+            repo_base = repo_parts[0]
+            branch = repo_parts[1] if len(repo_parts) > 1 else "main"
+        else:
+            repo_base = csv_repo_url
+            branch = "main"
+        
+        # Extract owner and repo name
+        url_parts = repo_base.replace("https://github.com/", "").split("/")
+        if len(url_parts) < 2:
+            st.error("❌ Invalid repository URL format")
+            return pd.DataFrame(), 0
+        
+        owner, repo = url_parts[0], url_parts[1]
+        
+        # API URL for repository contents
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Streamlit-Dashboard"
+        }
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            st.error(f"❌ GitHub API error: {response.status_code}")
+            return pd.DataFrame(), 0
+        
+        files = response.json()
+        csv_files = []
+        
+        # Get all CSV files
+        for f in files:
+            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
+                csv_files.append(f)
+            elif f.get('type') == 'dir':
+                sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
+        
+        if not csv_files:
+            st.warning("⚠️ No CSV files found")
+            return pd.DataFrame(), 0
+        
+        # Load all files without any limits
+        all_data = []
+        new_parsed_count = 0
+        
+        def download_and_parse_file(file_info):
+            """Download and parse a single file"""
+            download_url = file_info.get('download_url')
+            if not download_url:
+                return None, file_info['name'], "No download URL"
+            
+            filename = file_info['name']
+            
+            try:
+                csv_response = requests.get(download_url, headers=headers)
+                
+                if csv_response.status_code != 200:
+                    return None, filename, f"Download failed: {csv_response.status_code}"
+                
+                # Check if file is compressed
+                if filename.endswith('.gz'):
+                    csv_content = StringIO(gzip.decompress(csv_response.content).decode('utf-8'))
+                else:
+                    csv_content = StringIO(csv_response.text)
+                
+                parsed_data = parse_single_file(csv_content, filename)
+                
+                return parsed_data, filename, None
+            except Exception as e:
+                return None, filename, str(e)
+        
+        # Download files in parallel
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_file = {
+                executor.submit(download_and_parse_file, file_info): file_info 
+                for file_info in csv_files
+            }
+            
+            for future in as_completed(future_to_file):
+                parsed_data, filename, error = future.result()
+                
+                if error:
+                    print(f"Error loading {filename}: {error}")
+                elif parsed_data:
+                    all_data.append(parsed_data)
+                    new_parsed_count += 1
+        
+        # Sort by date
+        all_data.sort(key=lambda x: x['date'])
+        
+        # Create DataFrame without removing raw_player_data (NO LIMITS)
+        simple_data = []
+        for data in all_data:
+            row = {}
+            for key, value in data.items():
+                if key not in ['resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']:
+                    row[key] = value
+            simple_data.append(row)
+        
+        df = pd.DataFrame(simple_data)
+        
+        # Add all complex columns including raw_player_data (no limits)
+        complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']
+        
+        for col in complex_columns:
+            df[col] = None
+            df[col] = df[col].astype('object')
+            
+            col_data = []
+            for data in all_data:
+                col_data.append(data.get(col, None))
+            df[col] = col_data
+        
+        return df, new_parsed_count
+        
+    except Exception as e:
+        st.error(f"❌ Error loading all CSV files: {e}")
+        return pd.DataFrame(), 0

@@ -70,6 +70,61 @@ def render_resources_chart(resource_data, selected_name):
             st.plotly_chart(fig_resources, config={'displayModeBar': False})
 
 @st.fragment
+def render_troops_chart(troops_data, total_troops_data, selected_name):
+    """Fragment for Troops Over Time chart - only reruns when checkboxes change"""
+    if troops_data or total_troops_data:
+        # Troop selection with checkboxes
+        st.markdown("#### Select troop types to display:")
+        selected_troops = []
+        troop_names = sorted(set(troops_data.keys()))  # Sort alphabetically
+        cols = st.columns(5)
+        
+        # Add "Total Troops" as the first checkbox
+        with cols[0]:
+            key = f"troop_{selected_name}_total"
+            if st.checkbox("Total Troops", key=key):
+                selected_troops.append("Total Troops")
+        
+        # Add individual troop type checkboxes
+        for i, troop in enumerate(troop_names):
+            with cols[(i + 1) % 5]:  # Start from column 1 since Total Troops uses column 0
+                key = f"troop_{selected_name}_{i}_{troop}"
+                if st.checkbox(normalize_troop_name(troop), key=key):
+                    selected_troops.append(troop)
+        
+        if selected_troops:
+            fig_troops = go.Figure()
+            
+            # Add selected troop types
+            for troop in selected_troops:
+                if troop == "Total Troops" and total_troops_data:
+                    troop_df = pd.DataFrame(total_troops_data)
+                    fig_troops.add_trace(go.Scatter(
+                        x=troop_df['Date'],
+                        y=troop_df['Total Troops'],
+                        mode='lines+markers',
+                        name="Total Troops",
+                        line=dict(width=3)  # Make total troops line thicker
+                    ))
+                elif troop in troops_data:
+                    troop_df = pd.DataFrame(troops_data[troop])
+                    fig_troops.add_trace(go.Scatter(
+                        x=troop_df['Date'],
+                        y=troop_df['Count'],
+                        mode='lines+markers',
+                        name=normalize_troop_name(troop)
+                    ))
+            
+            fig_troops.update_layout(
+                title='Troops Over Time',
+                xaxis_title='Date',
+                yaxis_title='Count'
+            )
+            st.plotly_chart(fig_troops, config={'displayModeBar': False})
+        else:
+            st.info("Select troop types to display on the chart")
+
+@st.fragment
 def render_items_chart(items_data, selected_name):
     """Fragment for Items Over Time chart - only reruns when checkboxes change"""
     if items_data:
@@ -103,7 +158,85 @@ def render_items_chart(items_data, selected_name):
             )
             st.plotly_chart(fig_items, config={'displayModeBar': False})
 
-@st.fragment
+def normalize_troop_name(troop_name):
+    """Normalize troop names from underscore format to proper display format"""
+    if not troop_name:
+        return troop_name
+    # Convert underscores to spaces and capitalize each word
+    return ' '.join(word.capitalize() for word in troop_name.replace('_', ' ').split())
+
+def calculate_individual_troop_counts(player_data):
+    """Calculate individual troop counts with location breakdown"""
+    troop_counts = {
+        'total': 0,
+        'inventory': {},
+        'attacking': {},
+        'defending': {},
+        'summary': {
+            'inventory_total': 0,
+            'attacking_total': 0,
+            'defending_total': 0
+        }
+    }
+    
+    try:
+        # Parse troops_json for inventory troops
+        troops_json = player_data.get('troops_json', '')
+        if troops_json and pd.notna(troops_json):
+            troops_data = json.loads(troops_json)
+            if isinstance(troops_data, dict):
+                for troop_name, count in troops_data.items():
+                    if isinstance(count, (int, float)) and count > 0:
+                        troop_counts['inventory'][troop_name] = int(count)
+                        troop_counts['summary']['inventory_total'] += int(count)
+        
+        # Parse metadata for attacking troops (waver_config)
+        metadata = player_data.get('metadata', '')
+        if metadata and pd.notna(metadata):
+            metadata_data = json.loads(metadata)
+            if 'waver_config' in metadata_data:
+                waver_config = metadata_data['waver_config']
+                if isinstance(waver_config, dict) and 'lines' in waver_config:
+                    for line in waver_config['lines']:
+                        if 'troops' in line:
+                            troops = line['troops']
+                            wave_amount = line.get('waveAmount', 1)  # Default to 1 wave if not specified
+                            if isinstance(troops, list):
+                                for troop in troops:
+                                    troop_id = troop.get('troop_id', 'unknown')
+                                    amount_per_wave = troop.get('amount', 0)
+                                    total_amount = amount_per_wave * wave_amount  # Multiply by wave amount
+                                    if isinstance(total_amount, (int, float)) and total_amount > 0:
+                                        troop_counts['attacking'][troop_id] = troop_counts['attacking'].get(troop_id, 0) + int(total_amount)
+                                        troop_counts['summary']['attacking_total'] += int(total_amount)
+        
+        # Calculate defending troops (inventory - attacking)
+        for troop_name, inventory_count in troop_counts['inventory'].items():
+            attacking_count = troop_counts['attacking'].get(troop_name, 0)
+            defending_count = inventory_count - attacking_count
+            if defending_count > 0:
+                troop_counts['defending'][troop_name] = defending_count
+                troop_counts['summary']['defending_total'] += defending_count
+        
+        # Calculate grand total (inventory is the total, attacking is subset)
+        troop_counts['total'] = troop_counts['summary']['inventory_total']
+        
+        return troop_counts
+        
+    except Exception as e:
+        # Return empty troop counts on error (no st.error in pure function)
+        return {
+            'total': 0,
+            'inventory': {},
+            'attacking': {},
+            'defending': {},
+            'summary': {
+                'inventory_total': 0,
+                'attacking_total': 0,
+                'defending_total': 0
+            }
+        }
+
 def render_player_details(selected_name, player_data, latest_data, filtered_df):
     """Fragment for all player-specific content - only reruns when player selection changes"""
     st.markdown("---")
@@ -139,8 +272,88 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
             st.metric("Outpost", "Yes" if has_outpost else "No")
     
     with col4:
-        # Skins - display multiple icons with title
-        if 'equipped_skins' in player_data and pd.notna(player_data['equipped_skins']):
+        # Individual Troop Counts
+        troop_counts = calculate_individual_troop_counts(player_data)
+        if troop_counts['total'] > 0:
+            st.metric("Total Troops", f"{troop_counts['total']:,}")
+        else:
+            st.metric("Troops", "None")
+    
+    # Detailed Troop Breakdown
+    if troop_counts['total'] > 0:
+        st.markdown("---")
+        st.markdown("#### ⚔️ Troop Breakdown")
+        
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Inventory", f"{troop_counts['summary']['inventory_total']:,}")
+        with col2:
+            st.metric("Attacking", f"{troop_counts['summary']['attacking_total']:,}")
+        with col3:
+            st.metric("Defending", f"{troop_counts['summary']['defending_total']:,}")
+        
+        # Troops table (moved from below Skins section)
+        # Use raw_player_data directly to get current data instead of cached
+        if 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None:
+            player_df = latest_data['raw_player_data']
+            player = player_df[player_df['username'] == selected_name]
+            if not player.empty and 'troops_json' in player.columns:
+                st.markdown("#### Troops")
+                try:
+                    troops_dict = json.loads(player['troops_json'].iloc[0])
+                    if troops_dict:
+                        # Get all possible troop types from the dataset to ensure all columns are present
+                        all_troop_types = set()
+                        for _, player_row in player_df.iterrows():
+                            if pd.notna(player_row['troops_json']):
+                                try:
+                                    row_troops = json.loads(player_row['troops_json'])
+                                    all_troop_types.update(row_troops.keys())
+                                except:
+                                    continue
+                        
+                        # Filter out Great Dragon and Water Dragon (exact match, case-insensitive)
+                        dragons_to_filter = ['great dragon', 'water dragon', 'great_dragon', 'water_dragon']
+                        all_troop_types = [t for t in all_troop_types if t.lower() not in dragons_to_filter]
+                        
+                        # Build row with all troop types, filling missing with 0
+                        troop_row = {}
+                        for troop_type in all_troop_types:
+                            count = troops_dict.get(troop_type, 0)
+                            if pd.isna(count):
+                                count = 0
+                            troop_row[troop_type] = count
+                        
+                        # Normalize troop names using the same function
+                        normalized_troops = {normalize_troop_name(k): v for k, v in troop_row.items()}
+                        
+                        # Single row with troop types as columns, counts as values
+                        troops_df = pd.DataFrame([normalized_troops])
+                        troops_df.index = ['Count']
+                        # Format counts with commas
+                        for col in troops_df.columns:
+                            troops_df[col] = troops_df[col].apply(lambda x: f"{int(x):,}")
+                        st.dataframe(troops_df, width='stretch')
+                except:
+                    st.info("Troops data unavailable")
+        
+        # Troops Currently Attacking (moved from left column)
+        st.markdown("**Troops Currently Attacking**")
+        if troop_counts['attacking']:
+            attacking_df = pd.DataFrame([
+                {'Troop Type': normalize_troop_name(name), 'Count': count}
+                for name, count in sorted(troop_counts['attacking'].items(), key=lambda x: x[1], reverse=True)
+            ])
+            st.dataframe(attacking_df, width='stretch', hide_index=True)
+        else:
+            st.info("No troops currently attacking")
+    
+    # Skins section
+    st.markdown("---")
+    st.markdown("#### 🎨 Skins")
+    
+    if 'equipped_skins' in player_data and pd.notna(player_data['equipped_skins']):
             equipped_skins = player_data['equipped_skins']
             if isinstance(equipped_skins, str):
                 skins_list = []
@@ -276,51 +489,7 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
             effects_html += "</div>"
             st.markdown(effects_html, unsafe_allow_html=True)
     
-    # Troops section (condensed table - troop types as columns, counts as single row)
-    # Use raw_player_data directly to get current data instead of cached
-    if 'raw_player_data' in latest_data and latest_data['raw_player_data'] is not None:
-        player_df = latest_data['raw_player_data']
-        player = player_df[player_df['username'] == selected_name]
-        if not player.empty and 'troops_json' in player.columns:
-            st.markdown("#### Troops")
-            try:
-                troops_dict = json.loads(player['troops_json'].iloc[0])
-                if troops_dict:
-                    # Get all possible troop types from the dataset to ensure all columns are present
-                    all_troop_types = set()
-                    for _, player_row in player_df.iterrows():
-                        if pd.notna(player_row['troops_json']):
-                            try:
-                                row_troops = json.loads(player_row['troops_json'])
-                                all_troop_types.update(row_troops.keys())
-                            except:
-                                continue
-                    
-                    # Filter out Great Dragon and Water Dragon (exact match, case-insensitive)
-                    dragons_to_filter = ['great dragon', 'water dragon', 'great_dragon', 'water_dragon']
-                    all_troop_types = [t for t in all_troop_types if t.lower() not in dragons_to_filter]
-                    
-                    # Build row with all troop types, filling missing with 0
-                    troop_row = {}
-                    for troop_type in all_troop_types:
-                        count = troops_dict.get(troop_type, 0)
-                        if pd.isna(count):
-                            count = 0
-                        troop_row[troop_type] = count
-                    
-                    # Normalize troop names
-                    normalized_troops = {k.replace('_', ' ').title(): v for k, v in troop_row.items()}
-                    
-                    # Single row with troop types as columns, counts as values
-                    troops_df = pd.DataFrame([normalized_troops])
-                    troops_df.index = ['Count']
-                    # Format counts with commas
-                    for col in troops_df.columns:
-                        troops_df[col] = troops_df[col].apply(lambda x: f"{int(x):,}")
-                    st.dataframe(troops_df, width='stretch')
-            except:
-                st.info("Troops data unavailable")
-    
+        
     # Purchases section
     if 'shop_purchases' in player_data and pd.notna(player_data['shop_purchases']) and player_data['shop_purchases']:
         st.markdown("#### Shop Purchases")
@@ -451,51 +620,93 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
     st.markdown("---")
     st.markdown("#### 📈 Charts")
     
-    # Power Over Time chart
-    st.markdown("##### Power Over Time")
-    power_data = []
-    for _, row in filtered_df.iterrows():
-        if 'raw_player_data' in row and row['raw_player_data'] is not None:
-            df = row['raw_player_data']
-            if isinstance(df, pd.DataFrame):
-                player = df[df['username'] == selected_name]
-                if not player.empty:
-                    power_data.append({
-                        'Date': row['date'],
-                        'Power': player['power'].iloc[0]
-                    })
-    
-    if power_data:
-        power_df = pd.DataFrame(power_data)
-        fig_power = px.line(power_df, x='Date', y='Power', title='Power Over Time')
-        st.plotly_chart(fig_power, config={'displayModeBar': False})
-    
-    # Resources Over Time chart
-    st.markdown("##### Resources Over Time")
-    # Get resources over time data
-    resource_columns = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food', 'resource_fangtooth']
-    resource_data = {}
-    
-    for _, row in filtered_df.iterrows():
-        if 'raw_player_data' in row and row['raw_player_data'] is not None:
-            df = row['raw_player_data']
-            if isinstance(df, pd.DataFrame):
-                player = df[df['username'] == selected_name]
-                if not player.empty:
-                    for col in resource_columns:
-                        if col in player.columns:
-                            resource_name = col.replace('resource_', '').title()
-                            if resource_name not in resource_data:
-                                resource_data[resource_name] = []
-                            amount = player[col].iloc[0]
-                            if pd.notna(amount):
-                                resource_data[resource_name].append({
-                                    'Date': row['date'],
-                                    'Amount': amount
-                                })
-    
-    # Render resources chart in fragment for instant checkbox updates
-    render_resources_chart(resource_data, selected_name)
+    # Use historical data if available, otherwise use filtered data
+    if 'all_historical_data' in player_data:
+        # Use historical data for charts
+        historical_data = player_data['all_historical_data']
+        
+        # Power Over Time chart with historical data
+        st.markdown("##### Power Over Time")
+        power_data = []
+        for data_point in historical_data:
+            power_data.append({
+                'Date': data_point['data_date'],
+                'Power': data_point.get('power', 0)
+            })
+        
+        if power_data:
+            power_df = pd.DataFrame(power_data)
+            fig_power = px.line(power_df, x='Date', y='Power', title=f'Power Over Time ({len(power_data)} data points)')
+            st.plotly_chart(fig_power, config={'displayModeBar': False})
+        
+        # Resources Over Time chart with historical data
+        st.markdown("##### Resources Over Time")
+        resource_columns = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food', 'resource_fangtooth']
+        resource_data = {}
+        
+        for data_point in historical_data:
+            for col in resource_columns:
+                if col in data_point:
+                    resource_name = col.replace('resource_', '').title()
+                    if resource_name not in resource_data:
+                        resource_data[resource_name] = []
+                    amount = data_point[col]
+                    if pd.notna(amount):
+                        resource_data[resource_name].append({
+                            'Date': data_point['data_date'],
+                            'Amount': amount
+                        })
+        
+        # Render resources chart with historical data
+        render_resources_chart(resource_data, selected_name)
+        
+    else:
+        # Use regular filtered data for charts
+        # Power Over Time chart
+        st.markdown("##### Power Over Time")
+        power_data = []
+        for _, row in filtered_df.iterrows():
+            if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                df = row['raw_player_data']
+                if isinstance(df, pd.DataFrame):
+                    player = df[df['username'] == selected_name]
+                    if not player.empty:
+                        power_data.append({
+                            'Date': row['date'],
+                            'Power': player['power'].iloc[0]
+                        })
+        
+        if power_data:
+            power_df = pd.DataFrame(power_data)
+            fig_power = px.line(power_df, x='Date', y='Power', title='Power Over Time')
+            st.plotly_chart(fig_power, config={'displayModeBar': False})
+        
+        # Resources Over Time chart
+        st.markdown("##### Resources Over Time")
+        # Get resources over time data
+        resource_columns = ['resource_gold', 'resource_lumber', 'resource_stone', 'resource_metal', 'resource_food', 'resource_fangtooth']
+        resource_data = {}
+        
+        for _, row in filtered_df.iterrows():
+            if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                df = row['raw_player_data']
+                if isinstance(df, pd.DataFrame):
+                    player = df[df['username'] == selected_name]
+                    if not player.empty:
+                        for col in resource_columns:
+                            if col in player.columns:
+                                resource_name = col.replace('resource_', '').title()
+                                if resource_name not in resource_data:
+                                    resource_data[resource_name] = []
+                                amount = player[col].iloc[0]
+                                if pd.notna(amount):
+                                    resource_data[resource_name].append({
+                                        'Date': row['date'],
+                                        'Amount': amount
+                                    })
+        
+        # Render resources chart in fragment for instant checkbox updates
+        render_resources_chart(resource_data, selected_name)
     
     # Items over time section
     st.markdown("---")
@@ -524,6 +735,135 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
     
     # Render items chart in fragment for instant checkbox updates
     render_items_chart(items_data, selected_name)
+    
+    # Troops over time section
+    st.markdown("---")
+    st.markdown("#### ⚔️ Troops Over Time")
+    
+    # Get all troops data upfront
+    troops_data = {}
+    total_troops_over_time = []
+    
+    # Use historical data if available, otherwise use filtered data
+    if 'all_historical_data' in player_data:
+        # Use historical data for troops over time
+        historical_data = player_data['all_historical_data']
+        
+        for data_point in historical_data:
+            troops_json = data_point.get('troops_json', '')
+            if troops_json and pd.notna(troops_json):
+                try:
+                    troops_dict = json.loads(troops_json)
+                    
+                    # Get attacking troops from metadata
+                    attacking_troops = {}
+                    metadata = data_point.get('metadata', '')
+                    if metadata and pd.notna(metadata):
+                        try:
+                            metadata_data = json.loads(metadata)
+                            if 'waver_config' in metadata_data:
+                                waver_config = metadata_data['waver_config']
+                                if isinstance(waver_config, dict) and 'lines' in waver_config:
+                                    for line in waver_config['lines']:
+                                        wave_amount = line.get('waveAmount', 1)
+                                        if 'troops' in line:
+                                            troops = line['troops']
+                                            if isinstance(troops, list):
+                                                for troop in troops:
+                                                    troop_id = troop.get('troop_id', 'unknown')
+                                                    amount_per_wave = troop.get('amount', 0)
+                                                    total_amount = amount_per_wave * wave_amount
+                                                    if isinstance(total_amount, (int, float)) and total_amount > 0:
+                                                        attacking_troops[troop_id] = attacking_troops.get(troop_id, 0) + int(total_amount)
+                        except:
+                            pass
+                    
+                    # Calculate total owned troops (inventory + attacking)
+                    total_owned_troops = {}
+                    for troop_name, count in troops_dict.items():
+                        if isinstance(count, (int, float)) and count > 0:
+                            attacking_count = attacking_troops.get(troop_name, 0)
+                            total_owned = count + attacking_count
+                            total_owned_troops[troop_name] = total_owned
+                    
+                    total_count = sum(total_owned_troops.values())
+                    total_troops_over_time.append({
+                        'Date': data_point['data_date'],
+                        'Total Troops': total_count
+                    })
+                    
+                    for troop, count in total_owned_troops.items():
+                        if isinstance(count, (int, float)) and count > 0:
+                            if troop not in troops_data:
+                                troops_data[troop] = []
+                            troops_data[troop].append({
+                                'Date': data_point['data_date'],
+                                'Count': count
+                            })
+                except:
+                    pass
+    else:
+        # Use regular filtered data for troops over time
+        for _, row in filtered_df.iterrows():
+            if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                df = row['raw_player_data']
+                if isinstance(df, pd.DataFrame):
+                    player = df[df['username'] == selected_name]
+                    if not player.empty and 'troops_json' in player.columns:
+                        try:
+                            troops_dict = json.loads(player['troops_json'].iloc[0])
+                            
+                            # Get attacking troops from metadata
+                            attacking_troops = {}
+                            player_row = player.iloc[0]
+                            metadata = player_row.get('metadata', '')
+                            if metadata and pd.notna(metadata):
+                                try:
+                                    metadata_data = json.loads(metadata)
+                                    if 'waver_config' in metadata_data:
+                                        waver_config = metadata_data['waver_config']
+                                        if isinstance(waver_config, dict) and 'lines' in waver_config:
+                                            for line in waver_config['lines']:
+                                                wave_amount = line.get('waveAmount', 1)
+                                                if 'troops' in line:
+                                                    troops = line['troops']
+                                                    if isinstance(troops, list):
+                                                        for troop in troops:
+                                                            troop_id = troop.get('troop_id', 'unknown')
+                                                            amount_per_wave = troop.get('amount', 0)
+                                                            total_amount = amount_per_wave * wave_amount
+                                                            if isinstance(total_amount, (int, float)) and total_amount > 0:
+                                                                attacking_troops[troop_id] = attacking_troops.get(troop_id, 0) + int(total_amount)
+                                except:
+                                    pass
+                            
+                            # Calculate total owned troops (inventory + attacking)
+                            total_owned_troops = {}
+                            for troop_name, count in troops_dict.items():
+                                if isinstance(count, (int, float)) and count > 0:
+                                    attacking_count = attacking_troops.get(troop_name, 0)
+                                    total_owned = count + attacking_count
+                                    total_owned_troops[troop_name] = total_owned
+                            
+                            total_count = sum(total_owned_troops.values())
+                            total_troops_over_time.append({
+                                'Date': row['date'],
+                                'Total Troops': total_count
+                            })
+                            
+                            for troop, count in total_owned_troops.items():
+                                if isinstance(count, (int, float)) and count > 0:
+                                    if troop not in troops_data:
+                                        troops_data[troop] = []
+                                    troops_data[troop].append({
+                                        'Date': row['date'],
+                                        'Count': count
+                                    })
+                        except:
+                            pass
+    
+    # Render troops chart in fragment for instant checkbox updates
+    render_troops_chart(troops_data, total_troops_over_time, selected_name)
     
     # Buildings section
     st.markdown("---")
@@ -919,10 +1259,22 @@ def render_player_search(player_options, latest_data, filtered_df):
         # Parse selected player
         selected_name = selected_player_option.split(' | ')[0]
         
+        # Add button to load all historical data
+        load_all_data = st.button(f"📊 Load All Historical Data for {selected_name}", 
+                                 help="Load all historical data points for this player (bypasses 15-point cache limit)")
+        
         # Get player data from cache manager
-        player_data = cache_manager.get_player_data_by_name(selected_name)
+        if load_all_data:
+            with st.spinner(f"Loading all historical data for {selected_name}..."):
+                player_data = cache_manager.get_player_historical_data_by_name(selected_name, filtered_df)
+        else:
+            player_data = cache_manager.get_player_data_by_name(selected_name)
         
         if player_data:
+            # Show historical data information if loaded
+            if load_all_data and 'historical_data_points' in player_data:
+                st.success(f"✅ Loaded {player_data['historical_data_points']} historical data points for {selected_name}")
+            
             # Render all player details in fragment for instant widget updates
             render_player_details(selected_name, player_data, latest_data, filtered_df)
     else:

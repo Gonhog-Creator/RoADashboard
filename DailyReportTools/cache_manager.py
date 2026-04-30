@@ -552,6 +552,61 @@ class CacheManager:
                 return player_data
         return None
     
+    def get_player_historical_data_by_name(self, username, filtered_df):
+        """Get all historical data for a specific player by re-parsing CSV files without limits"""
+        try:
+            from data_loader import load_all_csv_files_without_limits
+            import pandas as pd
+            
+            # Load all CSV files without ANY limits
+            all_data_df, _ = load_all_csv_files_without_limits()
+            
+            if all_data_df.empty:
+                return None
+            
+            # Sort by date
+            all_data_df = all_data_df.sort_values('date')
+            
+            # Collect all historical data for the player
+            player_historical_data = []
+            
+            for _, data_point in all_data_df.iterrows():
+                if 'raw_player_data' in data_point and data_point['raw_player_data'] is not None:
+                    player_df = data_point['raw_player_data']
+                    
+                    if isinstance(player_df, pd.DataFrame) and not player_df.empty:
+                        # Find the player in this data point
+                        player_row = player_df[player_df['username'] == username]
+                        
+                        if not player_row.empty:
+                            player_data = player_row.iloc[0].to_dict()
+                            
+                            # Handle NaN values
+                            for key, value in player_data.items():
+                                if pd.isna(value):
+                                    player_data[key] = 0
+                            
+                            # Add date information
+                            player_data['data_date'] = data_point['date']
+                            player_data['filename'] = data_point.get('filename', 'unknown')
+                            
+                            player_historical_data.append(player_data)
+            
+            if not player_historical_data:
+                return None
+            
+            # Return the most recent data point (for compatibility with existing display)
+            # but also include historical data count for reference
+            latest_data = max(player_historical_data, key=lambda x: x['data_date'])
+            latest_data['historical_data_points'] = len(player_historical_data)
+            latest_data['all_historical_data'] = player_historical_data
+            
+            return latest_data
+            
+        except Exception as e:
+            st.error(f"Error loading historical data for {username}: {e}")
+            return None
+    
     def invalidate_cache(self):
         """Invalidate the cache"""
         if self.cache_key in st.session_state:

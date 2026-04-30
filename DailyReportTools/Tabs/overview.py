@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
+import base64
 
 def calculate_daily_rate(sorted_df, value_column):
     """Calculate true daily rate based on time differences between reports"""
@@ -630,13 +631,15 @@ def create_overview_tab(filtered_df):
                     player_data = row['raw_player_data']
                     if 'items_json' in player_data.columns:
                         items_json = player_data['items_json']
-                        if not items_json.isna().any() and not items_json.empty:
-                            try:
-                                items_dict = json.loads(items_json.iloc[0]) if len(items_json) > 0 else {}
-                                if isinstance(items_dict, dict):
-                                    all_items.update(items_dict.keys())
-                            except:
-                                continue
+                        # Process each player's items_json individually
+                        for items_str in items_json:
+                            if pd.notna(items_str) and items_str:
+                                try:
+                                    items_dict = json.loads(items_str)
+                                    if isinstance(items_dict, dict):
+                                        all_items.update(items_dict.keys())
+                                except:
+                                    continue
             
             # Find speedup items in data (in order of time)
             available_speedups = []
@@ -650,6 +653,10 @@ def create_overview_tab(filtered_df):
                         break
             
             if available_speedups:
+                # Add clear section header
+                st.markdown("#### ⚡ Individual Speedup Items")
+                st.markdown("*Speedup items across all players*")
+                
                 # Create grid for speedup tiles (horizontal layout - 5 per row)
                 for i in range(0, len(available_speedups), 5):
                     speedup_cols = st.columns(5)
@@ -663,20 +670,22 @@ def create_overview_tab(filtered_df):
                                     player_data = row['raw_player_data']
                                     if 'items_json' in player_data.columns:
                                         items_json = player_data['items_json']
-                                        if not items_json.isna().any() and not items_json.empty:
-                                            try:
-                                                items_dict = json.loads(items_json.iloc[0]) if len(items_json) > 0 else {}
-                                                if isinstance(items_dict, dict):
-                                                    count = 0
-                                                    for item_name, amount in items_dict.items():
-                                                        # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                                        search_key = speedup_type.lower().replace(' ', '_')
-                                                        search_name = item_name.lower()
-                                                        if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                                            count += amount
-                                            except:
-                                                pass
-                                    latest_amount = count  # This will be the last value
+                                        # Process each player's items_json individually
+                                        count = 0
+                                        for items_str in items_json:
+                                            if pd.notna(items_str) and items_str:
+                                                try:
+                                                    items_dict = json.loads(items_str)
+                                                    if isinstance(items_dict, dict):
+                                                        for item_name, amount in items_dict.items():
+                                                            # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                                            search_key = speedup_type.lower().replace(' ', '_')
+                                                            search_name = item_name.lower()
+                                                            if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                                count += amount
+                                                except:
+                                                    pass
+                                        latest_amount = count  # This will be the last value
                                 else:
                                     latest_amount = 0
                             
@@ -689,19 +698,21 @@ def create_overview_tab(filtered_df):
                                         player_data = row['raw_player_data']
                                         if 'items_json' in player_data.columns:
                                             items_json = player_data['items_json']
-                                            if not items_json.isna().any() and not items_json.empty:
-                                                try:
-                                                    items_dict = json.loads(items_json.iloc[0]) if len(items_json) > 0 else {}
-                                                    if isinstance(items_dict, dict):
-                                                        count = 0
-                                                        for item_name, amount in items_dict.items():
-                                                            # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                                            search_key = speedup_type.lower().replace(' ', '_')
-                                                            search_name = item_name.lower()
-                                                            if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                                                count += amount
-                                                except:
-                                                    pass
+                                            # Process each player's items_json individually
+                                            count = 0
+                                            for items_str in items_json:
+                                                if pd.notna(items_str) and items_str:
+                                                    try:
+                                                        items_dict = json.loads(items_str)
+                                                        if isinstance(items_dict, dict):
+                                                            for item_name, amount in items_dict.items():
+                                                                # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
+                                                                search_key = speedup_type.lower().replace(' ', '_')
+                                                                search_name = item_name.lower()
+                                                                if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
+                                                                    count += amount
+                                                    except:
+                                                        pass
                                         values.append(count)
                                     else:
                                         values.append(0)
@@ -784,6 +795,8 @@ def create_overview_tab(filtered_df):
                 else:
                     # No speedup items found - don't show warning since speedups might be displayed elsewhere
                     pass
+            else:
+                st.info("No speedup items found in the data")
     else:
         st.info("No data available")
 
@@ -887,7 +900,7 @@ def create_overview_tab(filtered_df):
                         
                         # Display total hourly amount
                         st.metric(
-                            "Total Hours per Hour",
+                            "Total Hours of Speedups",
                             f"{total_hourly_amount:,.0f}",
                             help="Combined speedup hours from all top 50 players"
                         )
