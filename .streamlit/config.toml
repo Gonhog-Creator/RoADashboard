@@ -1,0 +1,23 @@
+[server]
+maxUploadSize = 200
+maxMessageSize = 200
+enableCORS = false
+enableXsrfProtection = false
+headless = true
+port = 8501
+enableWebsocketCompression = false
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[client]
+caching = true
+displayEnabled = true
+
+[runner]
+magicEnabled = true
+
+[logger]
+level = "info"

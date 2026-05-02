@@ -370,7 +370,7 @@ def render_alliance_selection(alliance_names, current_stats, filtered_df):
                     if resource in member_table.columns:
                         member_table[resource] = member_table[resource].apply(lambda x: f"{int(x):,}" if pd.notna(x) and x != 0 else '0')
                 
-                st.dataframe(member_table, hide_index=True, use_container_width=True)
+                st.dataframe(member_table, hide_index=True, width='stretch')
     
     else:
         st.info("No data available for alliance analysis")

@@ -468,7 +468,7 @@ def create_purchases_tab(filtered_df):
         item_breakdown = item_breakdown.sort_values('Purchase Count', ascending=False)
         
         st.markdown("**Shop Item Breakdown**")
-        st.dataframe(item_breakdown, hide_index=True, use_container_width=True)
+        st.dataframe(item_breakdown, hide_index=True, width='stretch')
     else:
         st.info("No shop purchases found in the data.")
     
@@ -606,7 +606,7 @@ def render_player_search(player_names, player_data, player_id_mapping):
                     if shop_data:
                         shop_df_display = pd.DataFrame(shop_data)
                         shop_df_display = shop_df_display.sort_values('Purchased At', ascending=False)
-                        st.dataframe(shop_df_display, hide_index=True, use_container_width=True)
+                        st.dataframe(shop_df_display, hide_index=True, width='stretch')
                     else:
                         st.info("No shop purchases found for this player.")
                 else:
@@ -633,7 +633,7 @@ def render_player_search(player_names, player_data, player_id_mapping):
                     if store_data:
                         store_df_display = pd.DataFrame(store_data)
                         store_df_display = store_df_display.sort_values('Purchased At', ascending=False)
-                        st.dataframe(store_df_display, hide_index=True, use_container_width=True)
+                        st.dataframe(store_df_display, hide_index=True, width='stretch')
                     else:
                         st.info("No store purchases found for this player.")
                 else:
