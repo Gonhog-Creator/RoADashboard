@@ -12,9 +12,6 @@ gatherUsageStats = false
 serverAddress = "localhost"
 serverPort = 8501
 
-[client]
-caching = true
-displayEnabled = true
 
 [runner]
 magicEnabled = true

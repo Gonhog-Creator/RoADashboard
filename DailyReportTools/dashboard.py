@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+import json
 from data_loader import load_csv_files, calculate_daily_rate
 from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
