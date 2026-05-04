@@ -3,34 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
-def calculate_daily_rate(values, dates):
-    """Calculate true daily rate based on time differences between reports"""
-    if len(values) < 2:
-        return [0] * len(values)
-    
-    daily_rates = []
-    for i in range(len(values)):
-        if i == 0:
-            daily_rates.append(0)  # First report has no rate
-        else:
-            current_value = values[i]
-            previous_value = values[i-1]
-            current_time = dates[i]
-            previous_time = dates[i-1]
-            
-            # Calculate time difference in days
-            time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-            
-            if time_diff > 0:
-                # Calculate daily rate (change per day)
-                change = current_value - previous_value
-                daily_rate = change / time_diff
-                daily_rates.append(daily_rate)
-            else:
-                daily_rates.append(0)
-    
-    return daily_rates
+from utils import calculate_daily_rate, format_number, format_rate
 
 def create_resources_tab(filtered_df):
     """Create the Resources tab with resource analysis"""

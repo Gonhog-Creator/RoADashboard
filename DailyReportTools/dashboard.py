@@ -5,7 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 import json
-from data_loader import load_csv_files, calculate_daily_rate
+from data_loader import load_csv_files
+from utils import calculate_daily_rate, get_realm_name
 from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
 from Tabs.overview import create_overview_tab
@@ -23,9 +24,6 @@ from Tabs.daily_report import create_daily_report_tab
 from Tabs.purchases import create_purchases_tab
 from cache_manager import cache_manager
 
-def get_realm_name(realm_id):
-    """Convert realm ID to realm name"""
-    return 'Ruby'
 
 def get_latest_commit_version():
     """Get version number from latest git commit message, fallback to commit hash"""

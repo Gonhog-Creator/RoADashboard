@@ -8,35 +8,7 @@ from datetime import datetime
 import requests
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
-def calculate_daily_rate(values, dates):
-    """Calculate true daily rate based on time differences between reports"""
-    if len(values) < 2:
-        return [0] * len(values)
-    
-    daily_rates = []
-    
-    for i in range(len(values)):
-        if i == 0:
-            daily_rates.append(0)  # First report has no rate
-        else:
-            current_value = values[i]
-            previous_value = values[i-1]
-            current_time = dates[i]
-            previous_time = dates[i-1]
-            
-            # Calculate time difference in days
-            time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-            
-            if time_diff > 0.1:  # Only calculate rate if time difference is significant
-                # Calculate daily rate (change per day)
-                change = current_value - previous_value
-                daily_rate = change / time_diff
-                daily_rates.append(daily_rate)
-            else:
-                daily_rates.append(0)
-    
-    return daily_rates
+from utils import calculate_daily_rate
 
 def parse_comprehensive_csv_from_string(content, filename):
     """Parse comprehensive CSV from string content (for GitHub loading)"""

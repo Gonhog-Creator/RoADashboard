@@ -5,74 +5,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import base64
+from utils import calculate_daily_rate, format_number, format_rate, calculate_percentage
 
-def calculate_daily_rate(sorted_df, value_column):
-    """Calculate true daily rate based on time differences between reports"""
-    if len(sorted_df) < 2:
-        return pd.Series([0] * len(sorted_df))
-    
-    daily_rates = []
-    for i in range(len(sorted_df)):
-        if i == 0:
-            daily_rates.append(0)  # First report has no rate
-        else:
-            current_value = sorted_df.iloc[i][value_column]
-            previous_value = sorted_df.iloc[i-1][value_column]
-            current_time = sorted_df.iloc[i]['date']
-            previous_time = sorted_df.iloc[i-1]['date']
-            
-            # Calculate time difference in days
-            time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-            
-            if time_diff > 0.1:  # Only calculate rate if time difference is significant
-                # Calculate daily rate (change per day)
-                change = current_value - previous_value
-                daily_rate = change / time_diff
-                daily_rates.append(daily_rate)
-            else:
-                daily_rates.append(0)
-    
-    return pd.Series(daily_rates)
-
-def format_number(num, show_full=False):
-    """Format numbers with optional full display - keeps original styling"""
-    # Handle NaN values
-    if pd.isna(num):
-        return "N/A"
-    
-    if show_full:
-        # Full numbers with original st.metric styling
-        return f"{int(num):,}"
-    else:
-        # Abbreviated numbers
-        if num >= 1_000_000_000:
-            return f"{num/1_000_000_000:.1f}B"
-        elif num >= 1_000_000:
-            return f"{num/1_000_000:.1f}M"
-        elif num >= 1_000:
-            return f"{num/1_000:.1f}K"
-        else:
-            return f"{int(num)}"
-
-def format_rate(rate, show_full=False):
-    """Format daily growth rates with optional full display - keeps original styling"""
-    # Handle NaN values
-    if pd.isna(rate):
-        return "N/A/day"
-    
-    if show_full:
-        # Full rates with original st.metric styling
-        return f"{int(rate):+,}/day"
-    else:
-        # Abbreviated rates - use largest common number format
-        if abs(rate) >= 1_000_000_000:
-            return f"{rate/1_000_000_000:.1f}B/day"
-        elif abs(rate) >= 1_000_000:
-            return f"{rate/1_000_000:.1f}M/day"
-        elif abs(rate) >= 1_000:
-            return f"{rate/1_000:.1f}K/day"
-        else:
-            return f"{int(rate):,}/day"
 
 def create_overview_tab(filtered_df):
     """Create the Overview tab with resource and player stats"""

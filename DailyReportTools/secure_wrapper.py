@@ -8,9 +8,11 @@ import jwt
 import hashlib
 from functools import wraps
 
+# Import authentication functions from auth module
+from auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button
+
 # Configuration - Load from Streamlit secrets
 try:
-    SECRET_KEY = st.secrets["secret_key"]
     ADMIN_USERS = dict(st.secrets["admin_users"])
     
     # Handle nested secrets (github_token and csv_repo_url might be in admin_users)
@@ -35,93 +37,7 @@ except Exception as e:
     st.error(f"Please configure secrets in Streamlit Community Cloud settings!")
     st.stop()
 
-def generate_token(username):
-    """Generate JWT token for authenticated user"""
-    payload = {
-        'username': username,
-        'exp': datetime.now(timezone.utc) + timedelta(hours=24),
-        'iat': datetime.now(timezone.utc)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
-def verify_token(token):
-    """Verify JWT token"""
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        return payload['username']
-    except:
-        return None
-
-def check_authentication():
-    """Check if user is authenticated"""
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-        st.session_state.username = None
-    
-    token = st.query_params.get('token') or st.session_state.get('token')
-    
-    if token and not st.session_state.authenticated:
-        username = verify_token(token)
-        if username:
-            st.session_state.authenticated = True
-            st.session_state.username = username
-            st.session_state.token = token
-            st.query_params.clear()
-            return True
-    
-    return st.session_state.authenticated
-
-def login_page():
-    """Display login page"""
-    st.title("Realm Analytics - Login")
-    
-    with st.form("login_form"):
-        username = st.text_input("Username", key="login_username")
-        password = st.text_input("Password", type="password", key="login_password")
-        
-        # Add some spacing
-        st.write("")
-        
-        # Use form_submit_button which already supports Enter key
-        submit_button = st.form_submit_button("Login", width='stretch')
-        
-        if submit_button:
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            
-            if username in ADMIN_USERS and ADMIN_USERS[username] == hashed_password:
-                token = generate_token(username)
-                st.session_state.authenticated = True
-                st.session_state.username = username
-                st.session_state.token = token
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
-
-def require_auth(f):
-    """Decorator to require authentication for a function"""
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if not check_authentication():
-            login_page()
-            return None
-        return f(*args, **kwargs)
-    return wrapper
-
-def logout():
-    """Logout user"""
-    st.session_state.authenticated = False
-    st.session_state.username = None
-    st.session_state.token = None
-    st.rerun()
-
-def show_logout_button():
-    """Show logout button in sidebar"""
-    if st.session_state.get('authenticated'):
-        st.sidebar.markdown("---")
-        st.sidebar.markdown(f"**Logged in as:** {st.session_state.username}")
-        if st.sidebar.button("Logout"):
-            logout()
 
 def load_csv_from_github():
     """Load CSV files from private GitHub repository and save them as individual files"""

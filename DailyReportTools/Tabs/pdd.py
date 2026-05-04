@@ -7,6 +7,7 @@ import json
 import os
 import base64
 from cache_manager import cache_manager
+from Tabs.skins import SKIN_NAME_MAPPING
 
 @st.fragment
 def render_resources_chart(resource_data, selected_name):
@@ -82,7 +83,7 @@ def render_troops_chart(troops_data, total_troops_data, selected_name):
         # Add "Total Troops" as the first checkbox
         with cols[0]:
             key = f"troop_{selected_name}_total"
-            if st.checkbox("Total Troops", key=key):
+            if st.checkbox("Total Troops", value=True, key=key):
                 selected_troops.append("Total Troops")
         
         # Add individual troop type checkboxes
@@ -242,6 +243,9 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
     st.markdown("---")
     st.markdown(f"### 📊 {selected_name}")
     
+    # Calculate troop counts first
+    troop_counts = calculate_individual_troop_counts(player_data)
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -272,12 +276,85 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
             st.metric("Outpost", "Yes" if has_outpost else "No")
     
     with col4:
-        # Individual Troop Counts
-        troop_counts = calculate_individual_troop_counts(player_data)
-        if troop_counts['total'] > 0:
-            st.metric("Total Troops", f"{troop_counts['total']:,}")
+        # Skins section as a column
+        if 'equipped_skins' in player_data and pd.notna(player_data['equipped_skins']):
+            equipped_skins = player_data['equipped_skins']
+            if isinstance(equipped_skins, str):
+                skins_list = []
+                if '|' in equipped_skins:
+                    for entry in equipped_skins.split('|'):
+                        entry = entry.strip()
+                        if entry.startswith('{') or entry.startswith('['):
+                            try:
+                                parsed = json.loads(entry)
+                                if isinstance(parsed, dict):
+                                    skins_list.extend(list(parsed.keys()))
+                                else:
+                                    skins_list.extend(parsed)
+                            except:
+                                skins_list.append(entry)
+                        else:
+                            skins_list.append(entry)
+                else:
+                    skins_list = [equipped_skins]
+                
+                if skins_list:
+                    st.markdown("<div style='text-align: center; font-size: 12px; color: #666; margin-bottom: 5px;'>🎨 Skins</div>", unsafe_allow_html=True)
+                    # Display skins horizontally in a row
+                    icons_html = "<div style='display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;'>"
+                    for skin in skins_list[:4]:  # Show max 4 skins horizontally
+                        # Clean the skin name - remove all suffixes in parentheses
+                        clean_skin = skin.split('(')[0].strip() if '(' in skin else skin
+                        # Try to get common name from mapping first
+                        mapped_skin = SKIN_NAME_MAPPING.get(skin, clean_skin)
+                        
+                        # Convert skin name to icon filename
+                        # Try multiple filename variations with both original and mapped names
+                        icon_variations = []
+                        for skin_name in [clean_skin, mapped_skin]:
+                            icon_variations.extend([
+                                f"{skin_name.lower().replace(' ', '_')}.webp",
+                                f"{skin_name.lower().replace(' ', '_')}_small.webp", 
+                                f"{skin_name.lower().replace(' ', '_')}_large.webp",
+                                f"{skin_name.lower().replace(' ', '_')}-.webp",
+                                f"skin_{skin_name.lower().replace(' ', '_')}.webp",
+                                f"{skin_name.lower().replace(' ', '_').replace('city_', '')}.webp",
+                                f"{skin_name.lower().replace(' ', '_').replace('avatar_border_', '')}.webp",
+                                f"{skin_name.lower().replace(' ', '_').replace('skin_', '').replace('avatar_border_', '')}.webp",
+                                f"avatar_border_{skin_name.lower().replace(' ', '_').replace('skin_avatar_border_', '')}.webp",
+                                f"hanami_avatar_border.webp",  # Specific for hanami border
+                                f"hanami_border.webp",  # Alternative for hanami border
+                            ])
+                        # Remove duplicates
+                        icon_variations = list(set(icon_variations))
+                        
+                        icon_found = False
+                        img_data_url = ""
+                        for icon_filename in icon_variations:
+                            icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
+                            if os.path.exists(icon_path):
+                                try:
+                                    with open(icon_path, 'rb') as f:
+                                        img_data = base64.b64encode(f.read()).decode('utf-8')
+                                        img_data_url = f"data:image/webp;base64,{img_data}"
+                                    icon_found = True
+                                    break
+                                except:
+                                    continue
+                        
+                        if img_data_url:
+                            icons_html += f"<div style='text-align: center;'><img src='{img_data_url}' style='width: 90px; height: 90px; border-radius: 6px;'><div style='font-size: 10px; color: #666; margin-top: 3px;'>{clean_skin[:15]}</div></div>"
+                        else:
+                            # Show placeholder with skin name for debugging
+                            icons_html += f"<div style='text-align: center;'><div style='width: 90px; height: 90px; background: #E0E0E0; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #666;'>🎨</div><div style='font-size: 10px; color: #666; margin-top: 3px;'>{clean_skin[:15]}</div></div>"
+                    icons_html += "</div>"
+                    st.markdown(icons_html, unsafe_allow_html=True)
+                    
+                    if len(skins_list) > 4:
+                        st.markdown(f"<div style='text-align: center; font-size: 8px; color: #666;'>+{len(skins_list) - 4} more</div>", unsafe_allow_html=True)
         else:
-            st.metric("Troops", "None")
+            st.markdown("<div style='text-align: center; font-size: 12px; color: #666; margin-bottom: 5px;'>🎨 Skins</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align: center; color: #999; font-size: 11px;'>None</div>", unsafe_allow_html=True)
     
     # Detailed Troop Breakdown
     if troop_counts['total'] > 0:
@@ -349,66 +426,7 @@ def render_player_details(selected_name, player_data, latest_data, filtered_df):
         else:
             st.info("No troops currently attacking")
     
-    # Skins section
-    st.markdown("---")
-    st.markdown("#### 🎨 Skins")
-    
-    if 'equipped_skins' in player_data and pd.notna(player_data['equipped_skins']):
-            equipped_skins = player_data['equipped_skins']
-            if isinstance(equipped_skins, str):
-                skins_list = []
-                if '|' in equipped_skins:
-                    for entry in equipped_skins.split('|'):
-                        entry = entry.strip()
-                        if entry.startswith('{') or entry.startswith('['):
-                            try:
-                                parsed = json.loads(entry)
-                                if isinstance(parsed, dict):
-                                    skins_list.extend(list(parsed.keys()))
-                                else:
-                                    skins_list.extend(parsed)
-                            except:
-                                skins_list.append(entry)
-                        else:
-                            skins_list.append(entry)
-                else:
-                    skins_list = [equipped_skins]
-                
-                if skins_list:
-                    st.markdown("<div style='font-size: 12px; color: #666; margin-bottom: 5px;'>Skins</div>", unsafe_allow_html=True)
-                    # Display all skins in a horizontal row
-                    icons_html = "<div style='display: flex; gap: 5px; flex-wrap: wrap;'>"
-                    for skin in skins_list:
-                        # Clean the skin name - remove all suffixes in parentheses
-                        clean_skin = skin.split('(')[0].strip() if '(' in skin else skin
-                        # Convert skin name to icon filename
-                        # Try multiple filename variations
-                        icon_variations = [
-                            f"{clean_skin.lower().replace(' ', '_')}.webp",
-                            f"{clean_skin.lower().replace(' ', '_')}_small.webp",
-                            f"{clean_skin.lower().replace(' ', '_')}_large.webp",
-                            f"{clean_skin.lower().replace(' ', '_')}-.webp",
-                        ]
-                        
-                        icon_found = False
-                        for icon_filename in icon_variations:
-                            icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Images", icon_filename)
-                            if os.path.exists(icon_path):
-                                try:
-                                    with open(icon_path, 'rb') as f:
-                                        img_data = base64.b64encode(f.read()).decode('utf-8')
-                                        img_data_url = f"data:image/webp;base64,{img_data}"
-                                        icons_html += f"<img src='{img_data_url}' style='width: 40px; height: 40px;'>"
-                                        icon_found = True
-                                        break
-                                except:
-                                    continue
-                        
-                        if not icon_found:
-                            icons_html += f"<div style='width: 40px; height: 40px; background: #E0E0E0; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #666;'>🎨</div>"
-                    icons_html += "</div>"
-                    st.markdown(icons_html, unsafe_allow_html=True)
-    
+        
     # Active Effects section
     if 'active_effects' in player_data and pd.notna(player_data['active_effects']) and player_data['active_effects']:
         st.markdown("#### Active Effects")

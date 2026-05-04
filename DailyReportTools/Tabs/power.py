@@ -4,34 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-
-def calculate_daily_rate(sorted_df, value_column):
-    """Calculate daily growth rates using time differences"""
-    if len(sorted_df) < 2:
-        return pd.Series([0] * len(sorted_df))
-    
-    daily_rates = []
-    for i in range(len(sorted_df)):
-        if i == 0:
-            daily_rates.append(0)
-        else:
-            current_value = sorted_df.iloc[i][value_column]
-            previous_value = sorted_df.iloc[i-1][value_column]
-            current_time = sorted_df.iloc[i]['date']
-            previous_time = sorted_df.iloc[i-1]['date']
-            
-            # Calculate time difference in days
-            time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-            
-            if time_diff > 0:  # Only calculate rate if time difference is significant
-                # Calculate daily rate (change per day)
-                change = current_value - previous_value
-                daily_rate = change / time_diff
-                daily_rates.append(daily_rate)
-            else:
-                daily_rates.append(0)
-    
-    return pd.Series(daily_rates)
+from utils import calculate_daily_rate, format_number, format_rate
 
 def create_power_tab(filtered_df):
     """Enhanced Power tab with buckets, top players, and growth charts"""
@@ -64,37 +37,7 @@ def create_power_tab(filtered_df):
                 avg_meaningful_changes = avg_meaningful_changes[avg_meaningful_changes != 0]
                 daily_avg_power_change = avg_meaningful_changes.iloc[-1] if len(avg_meaningful_changes) > 0 else 0
         
-        # Format numbers function
-        def format_number(num, show_full=False):
-            if pd.isna(num):
-                return "0"
-            if show_full:
-                return f"{int(num):,}"
-            else:
-                if abs(num) >= 1_000_000_000:
-                    return f"{num/1_000_000_000:.1f}B"
-                elif abs(num) >= 1_000_000:
-                    return f"{num/1_000_000:.1f}M"
-                elif abs(num) >= 1_000:
-                    return f"{num/1_000:.1f}K"
-                else:
-                    return f"{int(num)}"
-        
-        def format_rate(rate, show_full=False):
-            if pd.isna(rate):
-                return "0/day"
-            if show_full:
-                return f"{int(rate):+,}/day"
-            else:
-                if abs(rate) >= 1_000_000_000:
-                    return f"{rate/1_000_000_000:.1f}B/day"
-                elif abs(rate) >= 1_000_000:
-                    return f"{rate/1_000_000:.1f}M/day"
-                elif abs(rate) >= 1_000:
-                    return f"{rate/1_000:.1f}K/day"
-                else:
-                    return f"{int(rate):,}/day"
-        
+                
         # Key Metrics Section
         st.markdown("#### Key Power Metrics")
         
