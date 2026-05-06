@@ -533,6 +533,19 @@ def load_csv_files_from_github():
             return pd.DataFrame(), 0
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            if 'message' in files:
+                st.error(f"❌ GitHub API error: {files['message']}")
+            else:
+                st.error(f"❌ Unexpected API response format: {files}")
+            return pd.DataFrame(), 0
+        
+        if not isinstance(files, list):
+            st.error(f"❌ Unexpected API response format")
+            return pd.DataFrame(), 0
+        
         csv_files = []
         
         # Check root directory for CSV files (backward compatibility)
@@ -733,6 +746,16 @@ def get_csv_files_from_directory(dir_path, owner, repo, github_token, headers):
             return []
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error in directory {dir_path}: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format in directory {dir_path}")
+            return []
+        
         csv_files = []
         
         for f in files:
@@ -830,6 +853,19 @@ def load_all_csv_files_without_limits():
             return pd.DataFrame(), 0
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            if 'message' in files:
+                st.error(f"❌ GitHub API error: {files['message']}")
+            else:
+                st.error(f"❌ Unexpected API response format: {files}")
+            return pd.DataFrame(), 0
+        
+        if not isinstance(files, list):
+            st.error(f"❌ Unexpected API response format")
+            return pd.DataFrame(), 0
+        
         csv_files = []
         
         # Get all CSV files
@@ -998,6 +1034,19 @@ def load_partial_database_clean(st):
             return pd.DataFrame(), 0
         
         contents = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(contents, dict):
+            if 'message' in contents:
+                st.error(f"❌ GitHub API error: {contents['message']}")
+            else:
+                st.error(f"❌ Unexpected API response format: {contents}")
+            return pd.DataFrame(), 0
+        
+        if not isinstance(contents, list):
+            st.error(f"❌ Unexpected API response format")
+            return pd.DataFrame(), 0
+        
         date_dirs = []
         
         for item in contents:
@@ -1017,6 +1066,16 @@ def load_partial_database_clean(st):
                 dir_response = requests.get(dir_url, headers=headers, timeout=15)
                 if dir_response.status_code == 200:
                     files = dir_response.json()
+                    
+                    # Check if GitHub API returned an error object instead of a list
+                    if isinstance(files, dict):
+                        st.sidebar.warning(f"GitHub API error in directory {date_dir}: {files.get('message', 'Unknown error')}")
+                        continue
+                    
+                    if not isinstance(files, list):
+                        st.sidebar.warning(f"Unexpected API response format in directory {date_dir}")
+                        continue
+                    
                     for f in files:
                         if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
                             f_with_path = f.copy()
@@ -1181,6 +1240,16 @@ def get_remote_file_list(owner, repo, github_token):
             return []
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format")
+            return []
+        
         csv_files = []
         
         # Check root directory for CSV files
@@ -1217,6 +1286,16 @@ def get_remote_file_info(owner, repo, github_token):
             return []
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format")
+            return []
+        
         csv_files = []
         
         # Check root directory for CSV files
@@ -1244,6 +1323,16 @@ def get_csv_file_info_from_directory(dir_path, owner, repo, github_token, header
             return []
         
         files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error in directory {dir_path}: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format in directory {dir_path}")
+            return []
+        
         csv_files = []
         
         for f in files:

@@ -148,6 +148,15 @@ def load_csv_from_github():
                     st.sidebar.error(f"API returned string instead of JSON: {files[:100]}...")
                     return False
                 
+                # GitHub API might return an error object instead of a list
+                if isinstance(files, dict):
+                    if 'message' in files:
+                        st.sidebar.error(f"GitHub API error: {files['message']}")
+                        return False
+                    else:
+                        st.sidebar.error(f"Unexpected API response format: {files}")
+                        return False
+                
                 if not isinstance(files, list):
                     st.sidebar.error(f"Unexpected API response format")
                     return False
