@@ -151,17 +151,8 @@ def load_csv_from_github():
 def load_csv_files():
     """Smart loading with database mode selection"""
     
-    # Add database mode selection to sidebar
-    st.sidebar.header("Database Mode")
-    database_mode = st.sidebar.selectbox(
-        "Select Database Mode",
-        options=["full", "partial", "local"],
-        index=0,
-        help="Full: Load all files from GitHub\nPartial: Load 2 files/day + last 24h\nLocal: Use cached files with sync"
-    )
-    
-    # Store database mode in session state
-    st.session_state.database_mode = database_mode
+    # Get database mode from session state (set during login)
+    database_mode = st.session_state.get('database_mode', 'full')
     
     # Import data_loader with mode support
     try:

@@ -69,6 +69,18 @@ def login_page():
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
+        
+        # Database mode selection
+        st.markdown("---")
+        st.markdown("**Database Mode**")
+        database_mode = st.radio(
+            "Select Database Mode",
+            options=["full", "partial", "local"],
+            index=0,
+            help="Full: Load all files from GitHub\nPartial: Load 2 files/day + last 24h\nLocal: Use cached files with sync",
+            key="login_database_mode"
+        )
+        
         submit_button = st.form_submit_button("Login")
         
         if submit_button:
@@ -89,6 +101,7 @@ def login_page():
                 st.session_state.authenticated = True
                 st.session_state.username = username
                 st.session_state.token = token
+                st.session_state.database_mode = database_mode
                 st.success("Login successful!")
                 st.rerun()
             else:
