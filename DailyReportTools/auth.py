@@ -6,73 +6,15 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from functools import wraps
 
-# Configuration - Load from Streamlit secrets or local fallback
-def load_secrets():
-    """Load secrets from local config first, then fallback to Streamlit Cloud"""
-    try:
-        # Try local config file first
-        import os
-        from pathlib import Path
-        
-        # Try multiple possible paths for local config
-        config_paths = [
-            Path(__file__).parent / "local_config.json",  # Same directory as auth.py
-            Path.home() / "Desktop" / "RoADashboard" / "DailyReportTools" / "local_config.json",  # Desktop path
-            Path("local_config.json"),  # Current working directory
-        ]
-        
-        config_path = None
-        for path in config_paths:
-            if path.exists():
-                config_path = path
-                break
-        
-        if config_path:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            SECRET_KEY = config["SECRET_KEY"]
-            ADMIN_USERS = config["ADMIN_USERS"]
-            GITHUB_TOKEN = config.get("GITHUB_TOKEN", "")
-            CSV_REPO_URL = config.get("CSV_REPO_URL", "")
-            return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "local"
-        else:
-            raise FileNotFoundError("local_config.json not found")
-    except Exception as e:
-        try:
-            # Fallback to Streamlit Cloud secrets
-            SECRET_KEY = st.secrets.get("secret_key", "")
-            ADMIN_USERS = dict(st.secrets.get("admin_users", {}))
-            # Also load GitHub credentials
-            GITHUB_TOKEN = st.secrets.get("github_token", "")
-            CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
-            
-            # Validate that we have required secrets
-            if not SECRET_KEY or not ADMIN_USERS:
-                raise ValueError("Missing required authentication secrets")
-                
-            return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "cloud"
-        except Exception as e:
-            st.error("❌ Please configure secrets in Streamlit Community Cloud settings or create local_config.json")
-            st.info("For local development, create local_config.json with:")
-            st.code('''
-{
-  "SECRET_KEY": "your-secret-key-here",
-  "ADMIN_USERS": {
-    "admin": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
-    "Gonhog": "2307f6b237dcc4de495b84c563d08b5cc362714c7699356a6a69f3994f51e6ae"
-  },
-  "GITHUB_TOKEN": "your-github-token-here",
-  "CSV_REPO_URL": "https://github.com/your-repo/data"
-}
-            ''')
-            st.stop()
-
-SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, secrets_source = load_secrets()
-
-# Make GitHub credentials available for import by other modules
-def get_github_credentials():
-    """Get GitHub credentials for use in other modules"""
-    return GITHUB_TOKEN, CSV_REPO_URL
+# Configuration - Load from Streamlit secrets (secure - not in GitHub)
+try:
+    # For Streamlit Community Cloud
+    SECRET_KEY = st.secrets["secret_key"]
+    ADMIN_USERS = dict(st.secrets["admin_users"])
+    
+except Exception as e:
+    st.error(f"❌ Please configure secrets in Streamlit Community Cloud settings!")
+    st.stop()
 
 def generate_token(username):
     """Generate JWT token for authenticated user"""
@@ -127,24 +69,6 @@ def login_page():
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
-        
-        # Database mode selection
-        st.subheader("Database Mode")
-        database_mode_index = st.radio(
-            "Select database loading mode:",
-            options=["Full Database", "Partial Database", "Local Database"],
-            key="database_mode_selection",
-            help="Full: Loads all data (slower)\nPartial: Loads recent data + 2 points per day (faster)\nLocal: Uses local files (fastest)"
-        )
-        
-        # Convert selection to mode value
-        if database_mode_index == "Full Database":
-            database_mode = "full"
-        elif database_mode_index == "Partial Database":
-            database_mode = "partial"
-        else:
-            database_mode = "local"
-        
         submit_button = st.form_submit_button("Login")
         
         if submit_button:
@@ -165,17 +89,7 @@ def login_page():
                 st.session_state.authenticated = True
                 st.session_state.username = username
                 st.session_state.token = token
-                # Get database mode from the radio button widget
-                selected_mode = st.session_state.get('database_mode_selection', 'Full Database')
-                # Convert string selection to mode value
-                if selected_mode == "Full Database":
-                    mode_value = "full"
-                elif selected_mode == "Partial Database":
-                    mode_value = "partial"
-                else:
-                    mode_value = "local"
-                st.session_state.database_mode = mode_value  # Store database selection
-                st.success(f"Login successful! Database mode: {selected_mode}")
+                st.success("Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid username or password")

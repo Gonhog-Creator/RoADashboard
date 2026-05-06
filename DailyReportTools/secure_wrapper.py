@@ -9,7 +9,7 @@ import hashlib
 from functools import wraps
 
 # Import authentication functions from auth module
-from auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button, get_github_credentials
+from auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button
 
 # Configuration - Load from Streamlit secrets
 try:
@@ -35,20 +35,6 @@ try:
     
 except Exception as e:
     st.error(f"Please configure secrets in Streamlit Community Cloud settings!")
-    st.stop()
-
-# Use the auth module's credential loading
-try:
-    GITHUB_TOKEN, CSV_REPO_URL = get_github_credentials()
-except Exception as e:
-    st.error(f"❌ Error loading GitHub credentials: {e}")
-    st.stop()
-
-# Use the auth module's credential loading
-try:
-    GITHUB_TOKEN, CSV_REPO_URL = get_github_credentials()
-except Exception as e:
-    st.error(f"❌ Error loading GitHub credentials: {e}")
     st.stop()
 
 
