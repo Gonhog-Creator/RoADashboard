@@ -6,15 +6,42 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from functools import wraps
 
-# Configuration - Load from Streamlit secrets (secure - not in GitHub)
-try:
-    # For Streamlit Community Cloud
-    SECRET_KEY = st.secrets["secret_key"]
-    ADMIN_USERS = dict(st.secrets["admin_users"])
-    
-except Exception as e:
-    st.error(f"❌ Please configure secrets in Streamlit Community Cloud settings!")
-    st.stop()
+# Configuration - Load from Streamlit secrets or local fallback
+def load_secrets():
+    """Load secrets from Streamlit Cloud or local fallback"""
+    try:
+        # Try Streamlit Cloud secrets first
+        SECRET_KEY = st.secrets["secret_key"]
+        ADMIN_USERS = dict(st.secrets["admin_users"])
+        return SECRET_KEY, ADMIN_USERS, "cloud"
+    except:
+        try:
+            # Fallback to local config file
+            import os
+            config_path = os.path.join(os.path.dirname(__file__), "local_config.json")
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                SECRET_KEY = config["SECRET_KEY"]
+                ADMIN_USERS = config["ADMIN_USERS"]
+                return SECRET_KEY, ADMIN_USERS, "local"
+            else:
+                raise FileNotFoundError("local_config.json not found")
+        except Exception as e:
+            st.error("❌ Please configure secrets in Streamlit Community Cloud settings or create local_config.json")
+            st.info("For local development, create local_config.json with:")
+            st.code('''
+{
+  "SECRET_KEY": "your-secret-key-here",
+  "ADMIN_USERS": {
+    "admin": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+    "Gonhog": "2307f6b237dcc4de495b84c563d08b5cc362714c7699356a6a69f3994f51e6ae"
+  }
+}
+            ''')
+            st.stop()
+
+SECRET_KEY, ADMIN_USERS, secrets_source = load_secrets()
 
 def generate_token(username):
     """Generate JWT token for authenticated user"""
@@ -69,6 +96,24 @@ def login_page():
     with st.form("login_form"):
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
+        
+        # Database mode selection
+        st.subheader("Database Mode")
+        database_mode_index = st.radio(
+            "Select database loading mode:",
+            options=["Full Database", "Partial Database", "Local Database"],
+            key="database_mode_selection",
+            help="Full: Loads all data (slower)\nPartial: Loads recent data + 2 points per day (faster)\nLocal: Uses local files (fastest)"
+        )
+        
+        # Convert selection to mode value
+        if database_mode_index == "Full Database":
+            database_mode = "full"
+        elif database_mode_index == "Partial Database":
+            database_mode = "partial"
+        else:
+            database_mode = "local"
+        
         submit_button = st.form_submit_button("Login")
         
         if submit_button:
@@ -89,7 +134,17 @@ def login_page():
                 st.session_state.authenticated = True
                 st.session_state.username = username
                 st.session_state.token = token
-                st.success("Login successful!")
+                # Get database mode from the radio button widget
+                selected_mode = st.session_state.get('database_mode_selection', 'Full Database')
+                # Convert string selection to mode value
+                if selected_mode == "Full Database":
+                    mode_value = "full"
+                elif selected_mode == "Partial Database":
+                    mode_value = "partial"
+                else:
+                    mode_value = "local"
+                st.session_state.database_mode = mode_value  # Store database selection
+                st.success(f"Login successful! Database mode: {selected_mode}")
                 st.rerun()
             else:
                 st.error("Invalid username or password")

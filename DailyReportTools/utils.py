@@ -104,15 +104,18 @@ def format_number(num, show_full=False):
         # Full numbers with comma separators
         return f"{int(num):,}"
     else:
-        # Abbreviated numbers
-        if num >= 1_000_000_000:
-            return f"{num/1_000_000_000:.1f}B"
-        elif num >= 1_000_000:
-            return f"{num/1_000_000:.1f}M"
-        elif num >= 1_000:
-            return f"{num/1_000:.1f}K"
+        # Abbreviated numbers - handle negative numbers properly
+        abs_num = abs(num)
+        sign = "-" if num < 0 else ""
+        
+        if abs_num >= 1_000_000_000:
+            return f"{sign}{abs_num/1_000_000_000:.1f}B"
+        elif abs_num >= 1_000_000:
+            return f"{sign}{abs_num/1_000_000:.1f}M"
+        elif abs_num >= 1_000:
+            return f"{sign}{abs_num/1_000:.1f}K"
         else:
-            return f"{int(num)}"
+            return f"{sign}{int(abs_num)}"
 
 
 def format_change(change):

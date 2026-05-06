@@ -49,10 +49,8 @@ def create_overview_tab(filtered_df):
                 with title_col1:
                     st.markdown("### 📈 Resource Overview")
                 with title_col2:
-                    # Use Streamlit's built-in toggle
-                    show_full_numbers = st.toggle("Full Numbers", value=st.session_state.get('resource_full_numbers', False), 
-                                                key="resource_full_numbers",
-                                                help="Show complete numbers instead of abbreviations")
+                    # Show abbreviated numbers (B/M/K format)
+                    st.markdown("**B/M/K Format**")
                 
                 # Calculate daily increases using true daily rates
                 sorted_filtered = filtered_df.sort_values('date')
@@ -128,11 +126,11 @@ def create_overview_tab(filtered_df):
                             latest_players = len(sorted_filtered.iloc[-1]['raw_player_data']) if 'raw_player_data' in sorted_filtered.iloc[-1] and sorted_filtered.iloc[-1]['raw_player_data'] is not None else 0
                             avg_per_player = latest_amount / latest_players if latest_players > 0 else 0
                             
-                            # Use st.metric for consistent styling in both modes
+                            # Use st.metric for consistent styling - use abbreviated format
                             st.metric(
                                 resource.title(),
-                                format_number(latest_amount, show_full_numbers),
-                                format_rate(daily_rate, show_full_numbers)
+                                format_number(latest_amount, False),
+                                format_rate(daily_rate, False)
                             )
                             
                             # Calculate unprotected resources (total - protected)
@@ -153,53 +151,39 @@ def create_overview_tab(filtered_df):
                             
                             # Add per player amount and unprotected resources info below metric
                             # Per player badge
-                            st.markdown(f"<div style='text-align: left; margin-top: -10px; margin-bottom: 2px;'><span style='background-color: #666; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{format_number(avg_per_player, show_full_numbers)}/player</span></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='text-align: left; margin-top: -10px; margin-bottom: 2px;'><span style='background-color: #666; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{format_number(avg_per_player, False)}/player</span></div>", unsafe_allow_html=True)
                             
                             # Unprotected badge below (only if not ruby)
                             if unprotected_amount > 0 and resource != 'ruby':
-                                st.markdown(f"<div style='text-align: left; margin-top: 0px;'><span style='background-color: #87CEEB; color: #333; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{format_number(unprotected_amount, show_full_numbers)} unprotected ({unprotected_percentage:.1f}%)</span></div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='text-align: left; margin-top: 0px;'><span style='background-color: #87CEEB; color: #333; padding: 2px 8px; border-radius: 12px; font-size: 14px;'>{format_number(unprotected_amount, False)} unprotected ({unprotected_percentage:.1f}%)</span></div>", unsafe_allow_html=True)
             
             with col2:
                 st.markdown("### 👥 Player Stats")
                 
-                # Player stats in grid
-                latest_players = len(filtered_df.iloc[-1]['raw_player_data']) if 'raw_player_data' in filtered_df.iloc[-1] and filtered_df.iloc[-1]['raw_player_data'] is not None else 0
+                # Player stats in grid - use total_players column for consistency with Growth Analysis
+                latest_players = filtered_df.iloc[-1]['total_players'] if 'total_players' in filtered_df.iloc[-1] else (len(filtered_df.iloc[-1]['raw_player_data']) if 'raw_player_data' in filtered_df.iloc[-1] and filtered_df.iloc[-1]['raw_player_data'] is not None else 0)
                 
                 if len(filtered_df) >= 2:
                     sorted_df = filtered_df.sort_values('date')
                     latest_date = sorted_df.iloc[-1]['date']
                     
-                    # Calculate true daily growth rate using time differences
-                    player_values = []
-                    for _, row in sorted_df.iterrows():
-                        if 'raw_player_data' in row and row['raw_player_data'] is not None:
-                            player_values.append(len(row['raw_player_data']))
-                        else:
-                            player_values.append(0)
-                    daily_rates = []
-                    for i in range(len(player_values)):
-                        if i == 0:
-                            daily_rates.append(0)
-                        else:
-                            current_value = player_values[i]
-                            previous_value = player_values[i-1]
-                            current_time = sorted_df.iloc[i]['date']
-                            previous_time = sorted_df.iloc[i-1]['date']
-                            
-                            # Calculate time difference in days
-                            time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-                            
-                            if time_diff > 0:
-                                daily_rate = (current_value - previous_value) / time_diff
-                                daily_rates.append(daily_rate)
+                    # Calculate true daily growth rate using time differences - use total_players column for consistency
+                    if 'total_players' in sorted_df.columns:
+                        player_values = sorted_df['total_players'].tolist()
+                    else:
+                        # Fallback to raw_player_data if total_players not available
+                        player_values = []
+                        for _, row in sorted_df.iterrows():
+                            if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                                player_values.append(len(row['raw_player_data']))
                             else:
-                                # Same day reports - handle as daily change
-                                change = current_value - previous_value
-                                daily_rates.append(change)  # Use the actual change as daily rate
+                                player_values.append(0)
+                    
+                    daily_rates = calculate_daily_rate(player_values, sorted_df['date'].tolist())
                     
                     # Get the latest daily rate
-                    daily_growth = daily_rates[-1]
-                    prev_day_players = len(sorted_df.iloc[-2]['raw_player_data']) if 'raw_player_data' in sorted_df.iloc[-2] and sorted_df.iloc[-2]['raw_player_data'] is not None else 0
+                    daily_growth = daily_rates[-1] if daily_rates else 0
+                    prev_day_players = sorted_df.iloc[-2]['total_players'] if 'total_players' in sorted_df.iloc[-2] else (len(sorted_df.iloc[-2]['raw_player_data']) if 'raw_player_data' in sorted_df.iloc[-2] and sorted_df.iloc[-2]['raw_player_data'] is not None else 0)
                     if prev_day_players > 0:
                         daily_percent = (daily_growth / prev_day_players) * 100
                     else:
@@ -209,7 +193,7 @@ def create_overview_tab(filtered_df):
                     week_ago = latest_date - pd.Timedelta(days=7)
                     week_data = sorted_df[sorted_df['date'] >= week_ago]
                     if len(week_data) >= 2:
-                        week_ago_players = len(week_data.iloc[0]['raw_player_data']) if 'raw_player_data' in week_data.iloc[0] and week_data.iloc[0]['raw_player_data'] is not None else 0
+                        week_ago_players = week_data.iloc[0]['total_players'] if 'total_players' in week_data.iloc[0] else (len(week_data.iloc[0]['raw_player_data']) if 'raw_player_data' in week_data.iloc[0] and week_data.iloc[0]['raw_player_data'] is not None else 0)
                         if week_ago_players > 0:
                             weekly_growth = latest_players - week_ago_players
                             weekly_percent = (weekly_growth / week_ago_players) * 100
@@ -224,7 +208,7 @@ def create_overview_tab(filtered_df):
                     month_ago = latest_date - pd.Timedelta(days=30)
                     month_data = sorted_df[sorted_df['date'] >= month_ago]
                     if len(month_data) >= 2:
-                        month_ago_players = len(month_data.iloc[0]['raw_player_data']) if 'raw_player_data' in month_data.iloc[0] and month_data.iloc[0]['raw_player_data'] is not None else 0
+                        month_ago_players = month_data.iloc[0]['total_players'] if 'total_players' in month_data.iloc[0] else (len(month_data.iloc[0]['raw_player_data']) if 'raw_player_data' in month_data.iloc[0] and month_data.iloc[0]['raw_player_data'] is not None else 0)
                         if month_ago_players > 0:
                             monthly_growth = latest_players - month_ago_players
                             monthly_percent = (monthly_growth / month_ago_players) * 100
@@ -558,139 +542,99 @@ def create_overview_tab(filtered_df):
                 'Testronius Infusion': 'Infusion_testronius.webp'
             }
             
-            # Get all item types and find speedup items
-            all_items = set()
-            for _, row in filtered_df.iterrows():
-                if 'raw_player_data' in row and row['raw_player_data'] is not None:
-                    player_data = row['raw_player_data']
-                    if 'items_json' in player_data.columns:
-                        items_json = player_data['items_json']
-                        # Process each player's items_json individually
-                        for items_str in items_json:
-                            if pd.notna(items_str) and items_str:
-                                try:
-                                    items_dict = json.loads(items_str)
-                                    if isinstance(items_dict, dict):
-                                        all_items.update(items_dict.keys())
-                                except:
-                                    continue
-            
-            # Find speedup items in data (in order of time)
-            available_speedups = []
-            for speedup_key in speedup_items.keys():  # Use keys() to maintain order
-                for item_name in all_items:
-                    # Handle both spaces and underscores for matching
-                    search_key = speedup_key.lower().replace(' ', '_')
-                    search_name = item_name.lower()
-                    if search_key in search_name or speedup_key.lower() in search_name:
-                        available_speedups.append(speedup_key)
-                        break
-            
-            if available_speedups:
+            # OPTIMIZED: Use only latest 2 reports for instant speedups calculation
+            if len(filtered_df) >= 2:
+                # Get only the latest 2 reports for speedups calculation
+                latest_df = filtered_df.nlargest(2, 'date').sort_values('date')
+                
+                # Pre-define speedup items to avoid searching all items
+                available_speedups = list(speedup_items.keys())
+                
                 # Add clear section header
                 st.markdown("#### ⚡ Individual Speedup Items")
-                st.markdown("*Speedup items across all players*")
+                st.markdown("*Speedup items across all players (latest 2 reports)*")
+                
+                # Initialize speedup data structure for just 2 reports
+                speedup_data = {speedup: {'latest': 0, 'previous': 0, 'daily_rate': 0} for speedup in available_speedups}
+                
+                # Process only the 2 latest reports
+                for idx, (_, row) in enumerate(latest_df.iterrows()):
+                    if 'raw_player_data' in row and row['raw_player_data'] is not None:
+                        player_data = row['raw_player_data']
+                        if 'items_json' in player_data.columns:
+                            items_json = player_data['items_json']
+                            
+                            # Count items for each speedup type in this row
+                            row_speedup_counts = {speedup: 0 for speedup in available_speedups}
+                            
+                            # Process each player's items_json once
+                            for items_str in items_json:
+                                if pd.notna(items_str) and items_str:
+                                    try:
+                                        items_dict = json.loads(items_str)
+                                        if isinstance(items_dict, dict):
+                                            for item_name, amount in items_dict.items():
+                                                item_name_lower = item_name.lower()
+                                                # Skip x5, x10, x15 variants
+                                                if any(x in item_name_lower for x in ['_x5', '_x10', '_x15']):
+                                                    continue
+                                                
+                                                # Match against all speedup types
+                                                for speedup_type in available_speedups:
+                                                    search_key = speedup_type.lower().replace(' ', '_')
+                                                    if search_key in item_name_lower or speedup_type.lower() in item_name_lower:
+                                                        row_speedup_counts[speedup_type] += amount
+                                    except:
+                                        pass
+                            
+                            # Store counts for each speedup
+                            for speedup_type in available_speedups:
+                                if idx == 0:  # Previous report
+                                    speedup_data[speedup_type]['previous'] = row_speedup_counts[speedup_type]
+                                else:  # Latest report
+                                    speedup_data[speedup_type]['latest'] = row_speedup_counts[speedup_type]
+                
+                # Calculate daily rates for each speedup
+                for speedup_type in available_speedups:
+                    latest = speedup_data[speedup_type]['latest']
+                    previous = speedup_data[speedup_type]['previous']
+                    
+                    # Calculate time difference between reports
+                    if len(latest_df) == 2:
+                        time_diff = (latest_df.iloc[1]['date'] - latest_df.iloc[0]['date']).total_seconds() / (24 * 3600)
+                        if time_diff > 0:
+                            speedup_data[speedup_type]['daily_rate'] = (latest - previous) / time_diff
+                        else:
+                            speedup_data[speedup_type]['daily_rate'] = 0
+                    else:
+                        speedup_data[speedup_type]['daily_rate'] = 0
+                
+                # Pre-load all images to avoid repeated file operations
+                image_cache = {}
+                for speedup_type in available_speedups:
+                    image_file = speedup_image_map.get(speedup_type, 'Bolt.webp')
+                    image_path = f"Images/{image_file}"
+                    try:
+                        with open(image_path, "rb") as img_file:
+                            encoded_image = base64.b64encode(img_file.read()).decode()
+                            image_cache[speedup_type] = f'<img src="data:image/webp;base64,{encoded_image}" width="50" style="border-radius: 4px;">'
+                    except:
+                        image_cache[speedup_type] = "⚡"
+                
+                # Get latest player count once
+                latest_players = len(latest_df.iloc[-1]['raw_player_data']) if 'raw_player_data' in latest_df.iloc[-1] and latest_df.iloc[-1]['raw_player_data'] is not None else 0
                 
                 # Create grid for speedup tiles (horizontal layout - 5 per row)
                 for i in range(0, len(available_speedups), 5):
                     speedup_cols = st.columns(5)
                     for j, speedup_type in enumerate(available_speedups[i:i+5]):
                         with speedup_cols[j]:
-                            # Get latest amount (using same logic as speedups tab)
-                            sorted_df = filtered_df.sort_values('date')
-                            latest_amount = 0
-                            for _, row in sorted_df.iterrows():
-                                if 'raw_player_data' in row and row['raw_player_data'] is not None:
-                                    player_data = row['raw_player_data']
-                                    if 'items_json' in player_data.columns:
-                                        items_json = player_data['items_json']
-                                        # Process each player's items_json individually
-                                        count = 0
-                                        for items_str in items_json:
-                                            if pd.notna(items_str) and items_str:
-                                                try:
-                                                    items_dict = json.loads(items_str)
-                                                    if isinstance(items_dict, dict):
-                                                        for item_name, amount in items_dict.items():
-                                                            # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                                            search_key = speedup_type.lower().replace(' ', '_')
-                                                            search_name = item_name.lower()
-                                                            if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                                                count += amount
-                                                except:
-                                                    pass
-                                        latest_amount = count  # This will be the last value
-                                else:
-                                    latest_amount = 0
-                            
-                            # Calculate true daily rate
-                            if len(sorted_df) >= 2:
-                                # Get all values in order
-                                values = []
-                                for _, row in sorted_df.iterrows():
-                                    if 'raw_player_data' in row and row['raw_player_data'] is not None:
-                                        player_data = row['raw_player_data']
-                                        if 'items_json' in player_data.columns:
-                                            items_json = player_data['items_json']
-                                            # Process each player's items_json individually
-                                            count = 0
-                                            for items_str in items_json:
-                                                if pd.notna(items_str) and items_str:
-                                                    try:
-                                                        items_dict = json.loads(items_str)
-                                                        if isinstance(items_dict, dict):
-                                                            for item_name, amount in items_dict.items():
-                                                                # Handle both spaces and underscores for matching (exclude x5, x10, x15 variants)
-                                                                search_key = speedup_type.lower().replace(' ', '_')
-                                                                search_name = item_name.lower()
-                                                                if (search_key in search_name or speedup_type.lower() in search_name) and not any(x in search_name for x in ['_x5', '_x10', '_x15']):
-                                                                    count += amount
-                                                    except:
-                                                        pass
-                                        values.append(count)
-                                    else:
-                                        values.append(0)
-                                
-                                # Calculate daily rate using time differences
-                                daily_rates = []
-                                for i in range(len(values)):
-                                    if i == 0:
-                                        daily_rates.append(0)
-                                    else:
-                                        current_value = values[i]
-                                        previous_value = values[i-1]
-                                        current_time = sorted_df.iloc[i]['date']
-                                        previous_time = sorted_df.iloc[i-1]['date']
-                                        
-                                        # Calculate time difference in days
-                                        time_diff = (current_time - previous_time).total_seconds() / (24 * 3600)
-                                        
-                                        if time_diff > 0:
-                                            daily_rate = (current_value - previous_value) / time_diff
-                                            daily_rates.append(daily_rate)
-                                        else:
-                                            daily_rates.append(0)
-                                
-                                daily_change = daily_rates[-1] if daily_rates else 0
-                            else:
-                                daily_change = 0
-                            
-                            # Display speedup tile with time
+                            # Use pre-computed data
+                            latest_amount = speedup_data[speedup_type]['latest']
+                            daily_change = speedup_data[speedup_type]['daily_rate']
                             time_duration = speedup_items.get(speedup_type, '')
-                            
-                            # Calculate average per player
-                            latest_players = len(sorted_df.iloc[-1]['raw_player_data']) if 'raw_player_data' in sorted_df.iloc[-1] and sorted_df.iloc[-1]['raw_player_data'] is not None else 0
                             avg_per_player = latest_amount / latest_players if latest_players > 0 else 0
-                            
-                            # Read image and convert to base64
-                            image_file = speedup_image_map.get(speedup_type, 'Bolt.webp')
-                            image_path = f"Images/{image_file}"
-                            try:
-                                with open(image_path, "rb") as img_file:
-                                    encoded_image = base64.b64encode(img_file.read()).decode()
-                                    image_html = f'<img src="data:image/webp;base64,{encoded_image}" width="50" style="border-radius: 4px;">'
-                            except:
-                                image_html = ""
+                            image_html = image_cache.get(speedup_type, "⚡")
                             
                             # Create custom metric with average per player (compact tile style)
                             st.markdown(f"""
@@ -717,11 +661,11 @@ def create_overview_tab(filtered_df):
                                     {image_html}
                                     <div style="font-size: 14px; font-weight: bold; color: white;">{speedup_type} ({time_duration})</div>
                                 </div>
-                                <div style="font-size: 20px; font-weight: bold; margin: 5px 0; color: white;">{int(latest_amount):,}</div>
+                                <div style="font-size: 20px; font-weight: bold; margin: 5px 0; color: white;">{format_number(latest_amount, False)}</div>
                                 <div style="display: flex; align-items: center; gap: 10px;">
-                                    <span style="font-size: 14px; color: white; background-color: {'green' if daily_change >= 0 else 'red'}; padding: 2px 8px; border-radius: 12px;">{int(daily_change):,}/day</span>
+                                    <span style="font-size: 14px; color: white; background-color: {'green' if daily_change >= 0 else 'red'}; padding: 2px 8px; border-radius: 12px;">{format_rate(daily_change, False)}</span>
                                     <span style="background-color: #666; color: white; padding: 2px 8px; border-radius: 12px; font-size: 14px;">
-                                        {int(avg_per_player):,}/player
+                                        {format_number(avg_per_player, False)}/player
                                     </span>
                                 </div>
                             </div>

@@ -21,3 +21,6 @@ DailyReportTools/.streamlit/
 # Local secrets files
 secrets.json
 S3Automation/secrets.json
+/DailyReportTools/local_config.json
+local_config.json
+/.streamlit/secrets.toml

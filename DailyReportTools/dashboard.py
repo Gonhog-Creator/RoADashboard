@@ -241,8 +241,14 @@ st.set_page_config(page_title="Realm Analytics Dashboard", layout="wide")
 if 'show_commit_history' not in st.session_state:
     st.session_state.show_commit_history = False
 
-# Load data first
-df = load_csv_files(st)
+# Use data loaded by secure_wrapper from session state
+if 'dashboard_data' in st.session_state and st.session_state.get('database_loaded', False):
+    df = st.session_state.dashboard_data
+else:
+    # Fallback - should not happen if secure_wrapper worked
+    df = load_csv_files(st)
+    if not df.empty:
+        st.session_state.dashboard_data = df
 
 # Create header with title and realm name in top-right
 col1, col2 = st.columns([3, 1])
@@ -544,27 +550,64 @@ else:
                                     if prev_row is not None:
                                         prev_df = prev_row['raw_player_data']
                                         
-                                        # Merge current and 7-day-ago data to find active players
-                                        merged_df = pd.merge(
-                                            current_df[['username', 'power', 'total_troops']],
-                                            prev_df[['username', 'power', 'total_troops']],
-                                            on='username',
-                                            suffixes=('_current', '_previous'),
-                                            how='outer'
-                                        )
-                                        merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
-                                        merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
+                                        # Check if required columns exist before merging
+                                        current_cols = ['username']
+                                        prev_cols = ['username']
                                         
-                                        active_players = merged_df[
-                                            (merged_df['power_change'] != 0) | 
-                                            (merged_df['troop_change'] != 0) |
-                                            (merged_df['power_current'].notna() & merged_df['power_previous'].isna())
-                                        ]
-                                        active_count = len(active_players)
-                                        total_count = len(current_df)
-                                        active_percentage = (active_count / total_count * 100) if total_count > 0 else 0
-                                        active_player_counts.append(active_count)
-                                        active_percentages.append(active_percentage)
+                                        # Add power column if it exists
+                                        if 'power' in current_df.columns:
+                                            current_cols.append('power')
+                                        if 'power' in prev_df.columns:
+                                            prev_cols.append('power')
+                                        
+                                        # Add total_troops column if it exists
+                                        if 'total_troops' in current_df.columns:
+                                            current_cols.append('total_troops')
+                                        elif 'troops' in current_df.columns:
+                                            current_cols.append('troops')
+                                        if 'total_troops' in prev_df.columns:
+                                            prev_cols.append('total_troops')
+                                        elif 'troops' in prev_df.columns:
+                                            prev_cols.append('troops')
+                                        
+                                        # Only merge if we have the required columns
+                                        if len(current_cols) > 1 and len(prev_cols) > 1:
+                                            # Merge current and 7-day-ago data to find active players
+                                            merged_df = pd.merge(
+                                                current_df[current_cols],
+                                                prev_df[prev_cols],
+                                                on='username',
+                                                suffixes=('_current', '_previous'),
+                                                how='outer'
+                                            )
+                                                                                
+                                            # Calculate changes only if columns exist
+                                            if 'power_current' in merged_df.columns and 'power_previous' in merged_df.columns:
+                                                merged_df['power_change'] = merged_df['power_current'] - merged_df['power_previous']
+                                            else:
+                                                merged_df['power_change'] = 0
+                                            
+                                            if 'total_troops_current' in merged_df.columns and 'total_troops_previous' in merged_df.columns:
+                                                merged_df['troop_change'] = merged_df['total_troops_current'] - merged_df['total_troops_previous']
+                                            elif 'troops_current' in merged_df.columns and 'troops_previous' in merged_df.columns:
+                                                merged_df['troop_change'] = merged_df['troops_current'] - merged_df['troops_previous']
+                                            else:
+                                                merged_df['troop_change'] = 0
+                                            
+                                            active_players = merged_df[
+                                                (merged_df['power_change'] != 0) | 
+                                                (merged_df['troop_change'] != 0) |
+                                                (merged_df['power_current'].notna() & merged_df['power_previous'].isna() if 'power_current' in merged_df.columns and 'power_previous' in merged_df.columns else False)
+                                            ]
+                                            active_count = len(active_players)
+                                            total_count = len(current_df)
+                                            active_percentage = (active_count / total_count * 100) if total_count > 0 else 0
+                                            active_player_counts.append(active_count)
+                                            active_percentages.append(active_percentage)
+                                        else:
+                                            # Cannot merge due to missing columns
+                                            active_player_counts.append(None)
+                                            active_percentages.append(None)
                                     else:
                                         # No 7-day-ago data, estimate
                                         active_player_counts.append(None)
@@ -678,10 +721,17 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Sync from GitHub"):
     # Invalidate cache manager cache
     cache_manager.invalidate_cache()
-    # Reload data with force_reload=True
+    # Reload data with force_reload=True using database mode
     st.cache_data.clear()
-    df = load_csv_files(st, force_reload=True)
-    st.success("Syncing from GitHub...")
+    database_mode = st.session_state.get('database_mode', 'full')
+    if isinstance(database_mode, tuple):
+        database_mode = database_mode[1]
+    from data_loader import load_csv_files_with_mode
+    df, parsed_count = load_csv_files_with_mode(st, database_mode, force_reload=True)
+    if df is not None and not df.empty:
+        st.session_state.dashboard_data = df
+        st.session_state.database_loaded = True
+    st.success(f"Syncing from GitHub using {database_mode} mode...")
     st.rerun()
 
 if st.sidebar.button("🗑️ Clear Cache"):
