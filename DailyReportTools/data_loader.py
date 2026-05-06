@@ -540,7 +540,12 @@ def load_csv_files_from_github():
             st.error(f"❌ GitHub API error: {response.status_code}")
             return pd.DataFrame(), 0
         
-        files = response.json()
+        try:
+            files = response.json()
+        except ValueError as e:
+            st.error(f"❌ Error loading from GitHub: {e}")
+            st.error(f"Response was not valid JSON: {response.text[:200]}...")
+            return pd.DataFrame(), 0
         
         # Check if GitHub API returned an error object instead of a list
         if isinstance(files, dict):
