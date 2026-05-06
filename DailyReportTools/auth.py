@@ -11,11 +11,16 @@ def load_secrets():
     """Load secrets from Streamlit Cloud or local fallback"""
     try:
         # Try Streamlit Cloud secrets first
-        SECRET_KEY = st.secrets["secret_key"]
-        ADMIN_USERS = dict(st.secrets["admin_users"])
+        SECRET_KEY = st.secrets.get("secret_key", "")
+        ADMIN_USERS = dict(st.secrets.get("admin_users", {}))
         # Also load GitHub credentials
         GITHUB_TOKEN = st.secrets.get("github_token", "")
         CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
+        
+        # Validate that we have required secrets
+        if not SECRET_KEY or not ADMIN_USERS:
+            raise ValueError("Missing required authentication secrets")
+            
         return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "cloud"
     except:
         try:

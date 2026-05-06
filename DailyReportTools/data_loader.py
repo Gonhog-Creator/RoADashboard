@@ -477,9 +477,24 @@ def load_csv_files_from_github():
         # Get GitHub credentials from centralized auth module
         github_token, csv_repo_url = get_github_credentials()
         
+        # Debug: Show credential status (remove in production)
+        # st.write(f"🔍 Debug: Token present: {bool(github_token)}, URL present: {bool(csv_repo_url)}")
+        
         if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured. Please add github_token and csv_repo_url to secrets.")
-            return pd.DataFrame(), 0
+            # Try direct fallback
+            try:
+                import json
+                import os
+                config_path = os.path.join(os.path.dirname(__file__), "local_config.json")
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    github_token = config.get("GITHUB_TOKEN", "")
+                    csv_repo_url = config.get("CSV_REPO_URL", "")
+                    st.success("✅ Using fallback local_config.json credentials")
+            except:
+                return pd.DataFrame(), 0
         
         # Extract owner and repo from URL
         if "/tree/" in csv_repo_url:
