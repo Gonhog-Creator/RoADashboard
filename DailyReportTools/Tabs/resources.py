@@ -3,7 +3,30 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from utils import calculate_daily_rate, format_number, format_rate
+try:
+    from utils import calculate_daily_rate, format_number, format_rate
+except ImportError:
+    try:
+        from DailyReportTools.utils import calculate_daily_rate, format_number, format_rate
+    except ImportError:
+        # Fallback - define minimal functions needed
+        def calculate_daily_rate(values, dates):
+            if len(values) < 2 or len(dates) < 2:
+                return []
+            daily_rates = []
+            for i in range(1, len(values)):
+                if dates[i] > dates[i-1]:
+                    days_diff = (dates[i] - dates[i-1]).days
+                    if days_diff > 0:
+                        rate = (values[i] - values[i-1]) / days_diff
+                        daily_rates.append(rate)
+            return daily_rates
+        
+        def format_number(num):
+            return f"{num:,}" if num is not None else "0"
+        
+        def format_rate(rate):
+            return f"{rate:+.1f}/day" if rate is not None else "0.0/day"
 
 def create_resources_tab(filtered_df):
     """Create the Resources tab with resource analysis"""

@@ -5,7 +5,35 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 import base64
-from utils import calculate_daily_rate, format_number, format_rate, calculate_percentage
+try:
+    from utils import calculate_daily_rate, format_number, format_rate, calculate_percentage
+except ImportError:
+    try:
+        from DailyReportTools.utils import calculate_daily_rate, format_number, format_rate, calculate_percentage
+    except ImportError:
+        # Fallback - define minimal functions needed
+        def calculate_daily_rate(values, dates):
+            if len(values) < 2 or len(dates) < 2:
+                return []
+            daily_rates = []
+            for i in range(1, len(values)):
+                if dates[i] > dates[i-1]:
+                    days_diff = (dates[i] - dates[i-1]).days
+                    if days_diff > 0:
+                        rate = (values[i] - values[i-1]) / days_diff
+                        daily_rates.append(rate)
+            return daily_rates
+        
+        def format_number(num):
+            return f"{num:,}" if num is not None else "0"
+        
+        def format_rate(rate):
+            return f"{rate:+.1f}/day" if rate is not None else "0.0/day"
+        
+        def calculate_percentage(current, previous):
+            if previous == 0:
+                return 100.0 if current > 0 else 0.0
+            return ((current - previous) / previous) * 100
 
 
 def create_overview_tab(filtered_df):

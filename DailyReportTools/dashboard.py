@@ -6,7 +6,35 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import json
 from data_loader import load_csv_files
-from utils import calculate_daily_rate, get_realm_name
+try:
+    from utils import calculate_daily_rate, get_realm_name
+except ImportError:
+    try:
+        from DailyReportTools.utils import calculate_daily_rate, get_realm_name
+    except ImportError:
+        # Fallback - define minimal functions needed
+        def calculate_daily_rate(values, dates):
+            """Calculate daily growth rate from values and dates"""
+            if len(values) < 2 or len(dates) < 2:
+                return []
+            
+            daily_rates = []
+            for i in range(1, len(values)):
+                if dates[i] > dates[i-1]:  # Ensure forward time progression
+                    days_diff = (dates[i] - dates[i-1]).days
+                    if days_diff > 0:
+                        rate = (values[i] - values[i-1]) / days_diff
+                        daily_rates.append(rate)
+            
+            return daily_rates
+        
+        def get_realm_name(realm_id):
+            """Get realm name from ID"""
+            realm_names = {
+                1: "Ruby", 2: "Sapphire", 3: "Topaz", 4: "Emerald", 
+                5: "Diamond", 6: "Amethyst", 7: "Onyx", 8: "Jade"
+            }
+            return realm_names.get(realm_id, f"Realm {realm_id}")
 from Tabs.speedups import create_speedups_tab
 from Tabs.resources import create_resources_tab
 from Tabs.overview import create_overview_tab
