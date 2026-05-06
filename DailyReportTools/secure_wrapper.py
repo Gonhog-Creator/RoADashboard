@@ -39,31 +39,11 @@ except ImportError:
             except:
                 return "", ""
 
-# Configuration - Load from Streamlit secrets (working pattern from 2.7)
+# Use the auth module's credential loading
 try:
-    # Try to get admin_users, but don't fail if it doesn't exist
-    ADMIN_USERS = dict(st.secrets.get("admin_users", {}))
-    
-    # Handle nested secrets (github_token and csv_repo_url might be in admin_users)
-    all_secrets = dict(st.secrets)
-    
-    GITHUB_TOKEN = None
-    CSV_REPO_URL = None
-    
-    # Try to get github_token from root level first, then from admin_users
-    if "github_token" in all_secrets:
-        GITHUB_TOKEN = st.secrets["github_token"]
-    elif "github_token" in ADMIN_USERS:
-        GITHUB_TOKEN = ADMIN_USERS["github_token"]
-    
-    # Try to get csv_repo_url from root level first, then from admin_users
-    if "csv_repo_url" in all_secrets:
-        CSV_REPO_URL = st.secrets["csv_repo_url"]
-    elif "csv_repo_url" in ADMIN_USERS:
-        CSV_REPO_URL = ADMIN_USERS["csv_repo_url"]
-    
+    GITHUB_TOKEN, CSV_REPO_URL = get_github_credentials()
 except Exception as e:
-    st.error(f"Please configure secrets in Streamlit Community Cloud settings!")
+    st.error(f"❌ Error loading GitHub credentials: {e}")
     st.stop()
 
 
