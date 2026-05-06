@@ -184,10 +184,7 @@ def load_csv_files():
     # Get database mode from session state
     database_mode = st.session_state.get('database_mode', 'full')
     
-    # Handle case where database_mode might be a tuple from radio button
-    if isinstance(database_mode, tuple):
-        database_mode = database_mode[1]  # Get the second element (the value)
-    
+        
     # Ensure database_mode is a string
     if database_mode is None or not isinstance(database_mode, str):
         database_mode = 'full'

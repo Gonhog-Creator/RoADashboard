@@ -724,8 +724,6 @@ if st.sidebar.button("🔄 Sync from GitHub"):
     # Reload data with force_reload=True using database mode
     st.cache_data.clear()
     database_mode = st.session_state.get('database_mode', 'full')
-    if isinstance(database_mode, tuple):
-        database_mode = database_mode[1]
     from data_loader import load_csv_files_with_mode
     df, parsed_count = load_csv_files_with_mode(st, database_mode, force_reload=True)
     if df is not None and not df.empty:
