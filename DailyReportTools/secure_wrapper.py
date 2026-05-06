@@ -149,29 +149,36 @@ def load_csv_from_github():
         return False
 
 def load_csv_files():
-    """Smart loading: Try local first, fallback to remote if empty"""
+    """Smart loading with database mode selection"""
     
-    # Try local files first
-    import glob
-    csv_files = glob.glob("Daily Reports/*.csv")
+    # Add database mode selection to sidebar
+    st.sidebar.header("Database Mode")
+    database_mode = st.sidebar.selectbox(
+        "Select Database Mode",
+        options=["full", "partial", "local"],
+        index=0,
+        help="Full: Load all files from GitHub\nPartial: Load 2 files/day + last 24h\nLocal: Use cached files with sync"
+    )
     
-    if csv_files:
-        st.sidebar.success("Using local CSV files")
-        return None
+    # Store database mode in session state
+    st.session_state.database_mode = database_mode
     
-    # Fallback to remote if local is empty
-    if GITHUB_TOKEN and CSV_REPO_URL:
-        success = load_csv_from_github()
+    # Import data_loader with mode support
+    try:
+        from data_loader import load_csv_files_with_mode
+        df, count = load_csv_files_with_mode(st, database_mode)
         
-        if success:
-            st.sidebar.success("Using remote CSV files")
-            return None  # Let the original dashboard handle the loading
+        if not df.empty:
+            st.sidebar.success(f"✅ Loaded {count} files using {database_mode} mode")
+            st.session_state.dashboard_data = df
+            st.session_state.database_loaded = True
+            return None
         else:
-            st.sidebar.error("Remote files also empty")
-    
-    # No data available
-    st.sidebar.error("No CSV files available locally or remotely")
-    return None
+            st.sidebar.error("No data loaded")
+            return None
+    except Exception as e:
+        st.sidebar.error(f"Error loading data: {e}")
+        return None
 
 @require_auth
 def main():
