@@ -10,7 +10,7 @@ from functools import wraps
 
 # Import authentication functions from auth module
 try:
-    from auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button, get_github_credentials
+    from DailyReportTools.auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button, get_github_credentials
 except ImportError:
     try:
         from DailyReportTools.auth import generate_token, verify_token, check_authentication, login_page, require_auth, logout, show_logout_button, get_github_credentials
