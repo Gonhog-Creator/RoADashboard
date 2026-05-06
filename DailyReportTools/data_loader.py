@@ -8,44 +8,7 @@ from datetime import datetime
 import requests
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
-try:
-    from utils import calculate_daily_rate
-except ImportError:
-    try:
-        from DailyReportTools.utils import calculate_daily_rate
-    except ImportError:
-        # Fallback - define minimal function needed
-        def calculate_daily_rate(values, dates):
-            """Calculate daily growth rate from values and dates"""
-            if len(values) < 2 or len(dates) < 2:
-                return []
-            
-            daily_rates = []
-            for i in range(1, len(values)):
-                if dates[i] > dates[i-1]:  # Ensure forward time progression
-                    days_diff = (dates[i] - dates[i-1]).days
-                    if days_diff > 0:
-                        rate = (values[i] - values[i-1]) / days_diff
-                        daily_rates.append(rate)
-            
-            return daily_rates
-try:
-    from auth import get_github_credentials
-except ImportError:
-    try:
-        from DailyReportTools.auth import get_github_credentials
-    except ImportError:
-        # Fallback - define minimal function needed
-        import streamlit as st
-        import json
-        import os
-        def get_github_credentials():
-            try:
-                github_token = st.secrets.get("github_token", "")
-                csv_repo_url = st.secrets.get("csv_repo_url", "")
-                return github_token, csv_repo_url
-            except:
-                return "", ""
+from utils import calculate_daily_rate
 
 def parse_comprehensive_csv_from_string(content, filename):
     """Parse comprehensive CSV from string content (for GitHub loading)"""
@@ -482,27 +445,18 @@ def parse_single_file(file_source, filename=None):
 def load_csv_files_from_github():
     """Load CSV files directly from GitHub API (no local files)"""
     try:
-        # Try to get GitHub credentials from secrets (working pattern from 2.7)
-        github_token = None
-        csv_repo_url = None
-        
-        # Check for secrets in multiple possible locations
-        if hasattr(st, 'secrets'):
-            all_secrets = dict(st.secrets)
-            
-            # Try root level first
-            if "github_token" in all_secrets:
-                github_token = st.secrets["github_token"]
-            if "csv_repo_url" in all_secrets:
-                csv_repo_url = st.secrets["csv_repo_url"]
-            
-            # Try admin_users level
-            if not github_token and "admin_users" in all_secrets:
-                admin_users = dict(st.secrets["admin_users"])
-                if "github_token" in admin_users:
-                    github_token = admin_users["github_token"]
-                if "csv_repo_url" in admin_users:
-                    csv_repo_url = admin_users["csv_repo_url"]
+        # Get GitHub credentials using the auth module (handles both cloud and local config)
+        try:
+            from auth import get_github_credentials
+            github_token, csv_repo_url = get_github_credentials()
+        except ImportError:
+            try:
+                from DailyReportTools.auth import get_github_credentials
+                github_token, csv_repo_url = get_github_credentials()
+            except ImportError:
+                # Fallback - try to load from secrets directly
+                github_token = st.secrets.get("github_token", "")
+                csv_repo_url = st.secrets.get("csv_repo_url", "")
         
         if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured. Please add github_token and csv_repo_url to secrets.")
@@ -540,41 +494,18 @@ def load_csv_files_from_github():
             st.error(f"❌ GitHub API error: {response.status_code}")
             return pd.DataFrame(), 0
         
-        try:
-            files = response.json()
-        except ValueError as e:
-            st.error(f"❌ Error loading from GitHub: {e}")
-            st.error(f"Response was not valid JSON: {response.text[:200]}...")
-            return pd.DataFrame(), 0
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            if 'message' in files:
-                st.error(f"❌ GitHub API error: {files['message']}")
-            else:
-                st.error(f"❌ Unexpected API response format: {files}")
-            return pd.DataFrame(), 0
-        
-        if not isinstance(files, list):
-            st.error(f"❌ Unexpected API response format")
-            return pd.DataFrame(), 0
-        
+        files = response.json()
         csv_files = []
         
         # Check root directory for CSV files (backward compatibility)
-        if isinstance(files, list):
-            for f in files:
-                if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
-                    csv_files.append(f)
-                elif f.get('type') == 'dir':
-                    # Check if this looks like a monthly directory (contains digits)
-                    # Recursively check subdirectories for CSV files
-                    try:
-                        sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
-                        csv_files.extend(sub_files)
-                    except Exception as e:
-                        st.error(f"❌ Error accessing directory {f['name']}: {e}")
-                        continue
+        for f in files:
+            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
+                csv_files.append(f)
+            elif f.get('type') == 'dir':
+                # Check if this looks like a monthly directory (contains digits)
+                # Recursively check subdirectories for CSV files
+                sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
         
         if not csv_files:
             st.warning("⚠️ No CSV files found in remote repository")
@@ -607,11 +538,7 @@ def load_csv_files_from_github():
             # Separate cached and uncached files
             files_to_download = []
             for file_info in csv_files:
-                if isinstance(file_info, dict):
-                    filename = file_info.get('name', 'unknown')
-                else:
-                    filename = str(file_info)
-                    continue
+                filename = file_info['name']
                 if filename in memory_cache:
                     all_data.append(memory_cache[filename]['data'])
                 else:
@@ -622,15 +549,6 @@ def load_csv_files_from_github():
                 total_bytes_downloaded = 0
                 
                 def download_and_parse_file(file_info):
-                    """Download and parse a single file"""
-                    if not isinstance(file_info, dict):
-                        return None, str(file_info), "Invalid file info format"
-                    
-                    download_url = file_info.get('download_url')
-                    if not download_url:
-                        return None, file_info.get('name', 'unknown''), "No download URL"
-                    
-                    filename = file_info.get('name', 'unknown'')
                     """Download and parse a single file"""
                     download_url = file_info.get('download_url')
                     if not download_url:
@@ -777,24 +695,17 @@ def get_csv_files_from_directory(dir_path, owner, repo, github_token, headers):
             return []
         
         files = response.json()
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            print(f"GitHub API error in directory {dir_path}: {files.get('message', 'Unknown error')}")
-            return []
-        
-        if not isinstance(files, list):
-            print(f"Unexpected API response format in directory {dir_path}")
-            return []
-        
         csv_files = []
         
         for f in files:
             if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
-                # Store the full path as a string
+                # Store the full path in the name for identification
+                f_with_path = f.copy()
+                # Ensure dir_path is a string
                 dir_path_str = str(dir_path) if dir_path is not None else ''
-                file_path = f"{dir_path_str}/{f['name']}"
-                csv_files.append(file_path)
+                f_with_path['name'] = f"{dir_path_str}/{f['name']}"
+                f_with_path['download_url'] = f.get('download_url', '')
+                csv_files.append(f_with_path)
             elif f.get('type') == 'dir':
                 # Recursively check subdirectories
                 sub_files = get_csv_files_from_directory(f"{dir_path}/{f['name']}", owner, repo, github_token, headers)
@@ -825,11 +736,10 @@ def load_all_csv_files_without_limits():
         import gzip
         from io import StringIO
         
-        # Try to get GitHub credentials from secrets (working pattern from 2.7)
+        # Get GitHub credentials
         github_token = None
         csv_repo_url = None
         
-        # Check for secrets in multiple possible locations
         if hasattr(st, 'secrets'):
             all_secrets = dict(st.secrets)
             
@@ -884,19 +794,6 @@ def load_all_csv_files_without_limits():
             return pd.DataFrame(), 0
         
         files = response.json()
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            if 'message' in files:
-                st.error(f"❌ GitHub API error: {files['message']}")
-            else:
-                st.error(f"❌ Unexpected API response format: {files}")
-            return pd.DataFrame(), 0
-        
-        if not isinstance(files, list):
-            st.error(f"❌ Unexpected API response format")
-            return pd.DataFrame(), 0
-        
         csv_files = []
         
         # Get all CSV files
@@ -989,7 +886,7 @@ def load_all_csv_files_without_limits():
         st.error(f"❌ Error loading all CSV files: {e}")
         return pd.DataFrame(), 0
 
-# ===== CLEAN THREE-LOADER IMPLEMENTATION =====
+# ===== DATABASE MODE FUNCTIONS =====
 
 def load_csv_files_with_mode(st, database_mode='full', force_reload=False):
     """Load CSV files based on database mode selection"""
@@ -999,11 +896,11 @@ def load_csv_files_with_mode(st, database_mode='full', force_reload=False):
     
     if database_mode == 'full':
         # Full database - current behavior
-        df, new_parsed_count = load_full_database_clean(st)
+        df, new_parsed_count = load_csv_files_from_github()
         return df, new_parsed_count
     
     elif database_mode == 'partial':
-        # Partial database - 3 points per day at equal intervals
+        # Partial database - 2 files per day + all last 24 hours
         df, new_parsed_count = load_partial_database_clean(st)
         return df, new_parsed_count
     
@@ -1014,12 +911,8 @@ def load_csv_files_with_mode(st, database_mode='full', force_reload=False):
     
     else:
         # Default to full mode
-        df, new_parsed_count = load_full_database_clean(st)
+        df, new_parsed_count = load_csv_files_from_github()
         return df, new_parsed_count
-
-def load_full_database_clean(st):
-    """Load full database with original progress bar"""
-    return load_csv_files_from_github()
 
 def load_partial_database_clean(st):
     """Load partial database - 2 points per day with optimized API calls"""
@@ -1028,8 +921,18 @@ def load_partial_database_clean(st):
         import re
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        # Get GitHub credentials
-        github_token, csv_repo_url = get_github_credentials()
+        # Get GitHub credentials using the auth module
+        try:
+            from auth import get_github_credentials
+            github_token, csv_repo_url = get_github_credentials()
+        except ImportError:
+            try:
+                from DailyReportTools.auth import get_github_credentials
+                github_token, csv_repo_url = get_github_credentials()
+            except ImportError:
+                # Fallback - try to load from secrets directly
+                github_token = st.secrets.get("github_token", "")
+                csv_repo_url = st.secrets.get("csv_repo_url", "")
         
         if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured")
@@ -1086,10 +989,10 @@ def load_partial_database_clean(st):
         
         st.sidebar.info(f"📅 Found {len(date_dirs)} date directories")
         
-        # Get files from each date directory (scan all directories for proper 3-per-day selection)
+        # Get files from each date directory
         all_csv_files = []
         
-        for date_dir in sorted(date_dirs):  # Sort all directories chronologically
+        for date_dir in sorted(date_dirs):
             st.sidebar.info(f"📁 Scanning {date_dir}...")
             dir_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{date_dir}"
             
@@ -1122,7 +1025,7 @@ def load_partial_database_clean(st):
             st.warning("⚠️ No CSV files found")
             return pd.DataFrame(), 0
         
-        # Select 3 files per day
+        # Select files for partial mode
         selected_files = select_partial_files(all_csv_files)
         
         if not selected_files:
@@ -1131,662 +1034,11 @@ def load_partial_database_clean(st):
         
         st.sidebar.info(f"🎯 Selected {len(selected_files)} files for partial mode")
         
-        # Download selected files with progress bar
+        # Download selected files
         return download_files_with_progress(selected_files, headers, "partial")
         
     except Exception as e:
         st.error(f"❌ Error loading partial database: {str(e)}")
-        return pd.DataFrame(), 0
-
-def load_local_database_clean(st):
-    """Load local database with sync functionality"""
-    import os
-    import json
-    from pathlib import Path
-    
-    try:
-        # Create local data directory on desktop
-        desktop_path = Path.home() / "Desktop" / "RoADashboard_Data"
-        desktop_path.mkdir(exist_ok=True)
-        
-        # Create subdirectories
-        (desktop_path / "csv_files").mkdir(exist_ok=True)
-        (desktop_path / "cache").mkdir(exist_ok=True)
-        
-                
-        # Check if we need to sync from GitHub
-        sync_needed = st.session_state.get('sync_needed', False)
-        force_sync = st.session_state.get('force_sync', False)
-        
-        # Check if local files exist - search recursively through all subdirectories
-        local_csv_dir = desktop_path / "csv_files"
-        
-        # Search recursively for all CSV and CSV.GZ files in the entire RoADashboard_Data directory
-        local_files = []
-        for pattern in ["*.csv", "*.csv.gz"]:
-            local_files.extend(desktop_path.rglob(pattern))
-        
-        # Filter out files that are not in csv_files subdirectory (to avoid system files)
-        local_files = [f for f in local_files if "csv_files" in str(f)]
-        
-        # Create a set of local file paths for comparison
-        local_file_paths = set()
-        for f in local_files:
-            # Convert to relative path from csv_files directory
-            relative_path = str(f.relative_to(local_csv_dir))
-            local_file_paths.add(relative_path)
-        
-                
-        # Check GitHub for new files if we have local files
-        if local_files and not sync_needed and not force_sync:
-            # Store message container for cleanup
-            github_check_msg = st.info("🔍 Checking GitHub for new files...")
-            try:
-                # Get GitHub credentials
-                github_token, csv_repo_url = get_github_credentials()
-                
-                if github_token and csv_repo_url:
-                    # Extract owner and repo from URL
-                    if "/tree/" in csv_repo_url:
-                        parts = csv_repo_url.split("/tree/")
-                        base_url = parts[0]
-                    else:
-                        base_url = csv_repo_url
-                    
-                    url_parts = base_url.replace("https://github.com/", "").split("/")
-                    owner, repo = url_parts[0], url_parts[1]
-                    
-                    # Get remote files
-                    remote_files = get_remote_file_list(owner, repo, github_token)
-                    remote_file_paths = set(remote_files)
-                    
-                    # Check for new or missing files
-                    missing_files = remote_file_paths - local_file_paths
-                    if missing_files:
-                        st.info(f"📥 Found {len(missing_files)} new files on GitHub. Syncing...")
-                        sync_needed = True
-                    else:
-                        # Store and clear the up-to-date message
-                        up_to_date_msg = st.info("✅ Local database is up to date")
-                        # Clear the GitHub check message after a delay
-                        import time
-                        time.sleep(2)
-                        github_check_msg.empty()
-                        time.sleep(1)
-                        up_to_date_msg.empty()
-                else:
-                    st.warning("⚠️ GitHub credentials not configured for sync check")
-            except Exception as e:
-                st.warning(f"⚠️ Failed to check for updates: {e}")
-        
-        if not local_files or sync_needed or force_sync:
-            if not local_files:
-                st.info("📥 No local files found. Syncing from GitHub...")
-            elif sync_needed:
-                st.info("🔄 Sync needed. Updating from GitHub...")
-            else:
-                st.info("🔄 Force sync requested. Updating from GitHub...")
-            
-            # Sync files from GitHub
-            if sync_needed:
-                # Get list of missing files to download
-                missing_files = remote_file_paths - local_file_paths
-                success = sync_files_from_github(local_csv_dir, st, missing_files)
-            else:
-                # Full sync for first time or force sync
-                success = sync_files_from_github(local_csv_dir, st)
-            if not success:
-                st.warning("⚠️ Failed to sync from GitHub. Falling back to full mode.")
-                return load_full_database_clean(st)
-            
-            # Clear sync flags
-            st.session_state.sync_needed = False
-            st.session_state.force_sync = False
-        
-        # Load local files
-        return load_local_files(local_csv_dir, st)
-        
-    except Exception as e:
-        st.error(f"❌ Error in local database mode: {e}")
-        st.info("💾 Falling back to full mode...")
-        return load_full_database_clean(st)
-
-def get_remote_file_list(owner, repo, github_token):
-    """Get list of CSV files from GitHub repository"""
-    try:
-        import requests
-        import re
-        
-        headers = {
-            "Authorization": f"token {github_token}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Streamlit-Dashboard"
-        }
-        
-        # API URL for repository contents
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
-        response = requests.get(api_url, headers=headers)
-        
-        if response.status_code != 200:
-            return []
-        
-        files = response.json()
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
-            return []
-        
-        if not isinstance(files, list):
-            print(f"Unexpected API response format")
-            return []
-        
-        csv_files = []
-        
-        # Check root directory for CSV files
-        for f in files:
-            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
-                csv_files.append(f['name'])
-            elif f.get('type') == 'dir':
-                # Recursively check subdirectories
-                sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
-                csv_files.extend(sub_files)
-        
-        return csv_files
-        
-    except Exception as e:
-        return []
-
-def get_remote_file_info(owner, repo, github_token):
-    """Get file info dictionaries from GitHub repository for sync process"""
-    try:
-        import requests
-        import re
-        
-        headers = {
-            "Authorization": f"token {github_token}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Streamlit-Dashboard"
-        }
-        
-        # API URL for repository contents
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
-        response = requests.get(api_url, headers=headers)
-        
-        if response.status_code != 200:
-            return []
-        
-        files = response.json()
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
-            return []
-        
-        if not isinstance(files, list):
-            print(f"Unexpected API response format")
-            return []
-        
-        csv_files = []
-        
-        # Check root directory for CSV files
-        for f in files:
-            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
-                csv_files.append(f)
-            elif f.get('type') == 'dir':
-                # Recursively check subdirectories
-                sub_files = get_csv_file_info_from_directory(f['name'], owner, repo, github_token, headers)
-                csv_files.extend(sub_files)
-        
-        return csv_files
-        
-    except Exception as e:
-        return []
-
-def get_csv_file_info_from_directory(dir_path, owner, repo, github_token, headers):
-    """Recursively get CSV file info dictionaries from a GitHub directory"""
-    try:
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{dir_path}"
-        
-        response = requests.get(api_url, headers=headers)
-        
-        if response.status_code != 200:
-            return []
-        
-        files = response.json()
-        
-        # Check if GitHub API returned an error object instead of a list
-        if isinstance(files, dict):
-            print(f"GitHub API error in directory {dir_path}: {files.get('message', 'Unknown error')}")
-            return []
-        
-        if not isinstance(files, list):
-            print(f"Unexpected API response format in directory {dir_path}")
-            return []
-        
-        csv_files = []
-        
-        for f in files:
-            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
-                # Store the full path in the name for identification
-                f_with_path = f.copy()
-                dir_path_str = str(dir_path) if dir_path is not None else ''
-                f_with_path['name'] = f"{dir_path_str}/{f['name']}"
-                f_with_path['download_url'] = f.get('download_url', '')
-                csv_files.append(f_with_path)
-            elif f.get('type') == 'dir':
-                # Recursively check subdirectories
-                sub_files = get_csv_file_info_from_directory(f"{dir_path}/{f['name']}", owner, repo, github_token, headers)
-                csv_files.extend(sub_files)
-        
-        return csv_files
-    except Exception as e:
-        print(f"Error getting files from directory {dir_path}: {e}")
-        return []
-
-def sync_files_from_github(local_dir, st, missing_files=None):
-    """Sync CSV files from GitHub to local directory
-    Args:
-        local_dir: Local directory to save files
-        st: Streamlit instance
-        missing_files: Optional list of specific files to download (for selective sync)
-    """
-    try:
-        import requests
-        import gzip
-        from io import StringIO
-        
-        # Get GitHub credentials
-        github_token, csv_repo_url = get_github_credentials()
-        
-        if not github_token or not csv_repo_url:
-            st.error("❌ GitHub credentials not configured")
-            return False
-        
-        # Extract owner and repo from URL
-        if "/tree/" in csv_repo_url:
-            repo_parts = csv_repo_url.split("/tree/")
-            repo_base = repo_parts[0]
-            branch = repo_parts[1] if len(repo_parts) > 1 else "main"
-        else:
-            repo_base = csv_repo_url
-            branch = "main"
-        
-        # Extract owner and repo name
-        url_parts = repo_base.replace("https://github.com/", "").split("/")
-        if len(url_parts) < 2:
-            st.error("❌ Invalid repository URL format")
-            return False
-        
-        owner, repo = url_parts[0], url_parts[1]
-        
-        # GitHub API headers
-        headers = {
-            "Authorization": f"token {github_token}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "Streamlit-Dashboard"
-        }
-        
-        # Get all CSV files from GitHub
-        csv_files = get_remote_file_info(owner, repo, github_token)
-        
-        if not csv_files:
-            st.warning("⚠️ No CSV files found in remote repository")
-            return False
-        
-        # Filter files if missing_files is provided (selective sync)
-        if missing_files is not None:
-            missing_files_set = set(missing_files)
-            filtered_files = []
-            for file_info in csv_files:
-                filename = file_info['name']
-                if filename in missing_files_set:
-                    filtered_files.append(file_info)
-            csv_files = filtered_files
-            st.info(f"📥 Downloading {len(csv_files)} new files...")
-        
-        # Download files concurrently with ThreadPoolExecutor
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import threading
-        
-        downloaded_count = 0
-        total_files = len(csv_files)
-        failed_downloads = []
-        
-        # Page refresh detection using timestamp
-        import time
-        if 'download_start_time' not in st.session_state:
-            st.session_state.download_start_time = 0
-        
-        # Set download start time (this will be unique per page load)
-        current_start_time = time.time()
-        st.session_state.download_start_time = current_start_time
-        
-        # Create progress bar and status container
-        progress_bar = st.progress(0, text=f"📥 Downloading files... 0/{total_files}")
-        status_text = st.empty()
-        
-        # Simple progress tracking (no threading locks)
-        completed_count = 0
-        should_stop = threading.Event()  # Event to signal thread termination
-        
-        def update_progress():
-            """Update progress bar (simple version)"""
-            if should_stop.is_set():
-                return
-            # Ensure progress never exceeds 1.0
-            progress = min(completed_count / total_files, 1.0)
-            progress_bar.progress(progress, text=f"📥 Downloading files... {completed_count}/{total_files}")
-        
-        def download_single_file(file_info):
-            """Download a single file"""
-            nonlocal completed_count, downloaded_count
-            
-            # Check if we should stop (page refresh)
-            if should_stop.is_set():
-                return None
-            
-            try:
-                download_url = file_info.get('download_url')
-                if not download_url:
-                    return None
-                
-                filename = file_info['name']
-                
-                # Check stop signal again before starting download
-                if should_stop.is_set():
-                    return None
-                
-                # Handle subdirectories in filename
-                if '/' in filename:
-                    # Create subdirectory if needed
-                    subdir = local_dir / '/'.join(filename.split('/')[:-1])
-                    subdir.mkdir(exist_ok=True)
-                    local_path = subdir / filename.split('/')[-1]
-                else:
-                    local_path = local_dir / filename
-                
-                response = requests.get(download_url, headers=headers, timeout=30)
-                
-                # Check stop signal after request
-                if should_stop.is_set():
-                    return None
-                
-                if response.status_code == 200:
-                    if filename.endswith('.gz'):
-                        # Check if file is actually gzipped by examining magic number
-                        if len(response.content) >= 2 and response.content[:2] == b'\x1f\x8b':
-                            # Proper gzip file - decompress it
-                            content = gzip.decompress(response.content).decode('utf-8')
-                            with open(local_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                        else:
-                            # Not actually gzipped - save as plain text
-                            content = response.text
-                            with open(local_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                    else:
-                        with open(local_path, 'w', encoding='utf-8') as f:
-                            f.write(response.text)
-                    
-                    # Thread-safe update - only increment downloaded_count, main thread handles completed_count
-                    with download_lock:
-                        downloaded_count += 1
-                        # Update progress at intervals to avoid overwhelming Streamlit
-                        if downloaded_count % progress_update_interval == 0 or downloaded_count == total_files:
-                            update_progress()
-                    
-                    return filename
-                else:
-                    # Failed download - still count as completed
-                    with download_lock:
-                        if downloaded_count % progress_update_interval == 0 or downloaded_count == total_files:
-                            update_progress()
-                    return None
-                    
-            except Exception as e:
-                # Exception - still count as completed
-                with download_lock:
-                    if downloaded_count % progress_update_interval == 0 or downloaded_count == total_files:
-                        update_progress()
-                return filename
-        
-        # No separate progress updater thread - will update from main thread only
-        
-        # Use simple sequential downloads for reliability with Streamlit
-        st.info("🔄 Starting sequential downloads...")
-        
-        if not csv_files:
-            st.warning("⚠️ No files to download!")
-            return False
-        
-        for i, file_info in enumerate(csv_files):
-            # Check if we should stop (page refresh detected)
-            if should_stop.is_set():
-                break
-            
-            # Check for page refresh using timestamp
-            if abs(st.session_state.download_start_time - current_start_time) > 1.0:
-                should_stop.set()
-                progress_bar.empty()
-                st.warning("⏸️ Download stopped due to page refresh")
-                break
-            
-            filename = file_info['name']
-            download_url = file_info.get('download_url')
-            
-            if not download_url:
-                failed_downloads.append(filename)
-                continue
-            
-            try:
-                # Handle subdirectories
-                if '/' in filename:
-                    subdir = local_dir / '/'.join(filename.split('/')[:-1])
-                    subdir.mkdir(exist_ok=True)
-                    local_path = subdir / filename.split('/')[-1]
-                else:
-                    local_path = local_dir / filename
-                
-                # Download file with shorter timeout and retry logic
-                response = None
-                for attempt in range(3):  # 3 attempts
-                    try:
-                        response = requests.get(download_url, headers=headers, timeout=10)  # Reduced timeout
-                        break
-                    except requests.exceptions.Timeout:
-                        if attempt == 2:  # Last attempt
-                            raise
-                        continue
-                    except Exception as e:
-                        if attempt == 2:  # Last attempt
-                            raise
-                        continue
-                
-                if response.status_code == 200:
-                    if filename.endswith('.gz'):
-                        # Check if file is actually gzipped by examining magic number
-                        if len(response.content) >= 2 and response.content[:2] == b'\x1f\x8b':
-                            # Proper gzip file - decompress it
-                            content = gzip.decompress(response.content).decode('utf-8')
-                            with open(local_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                        else:
-                            # Not actually gzipped - save as plain text
-                            content = response.text
-                            with open(local_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                    else:
-                        with open(local_path, 'w', encoding='utf-8') as f:
-                            f.write(response.text)
-                    
-                    downloaded_count += 1
-                else:
-                    failed_downloads.append(filename)
-                
-            except Exception as e:
-                failed_downloads.append(filename)
-                st.warning(f"⚠️ Failed to download {filename}: {e}")
-            
-            # Update progress (no lock)
-            completed_count = i + 1
-            update_progress()
-            
-            # Show progress every 10 files
-            if (i + 1) % 10 == 0:
-                st.info(f"📊 Downloaded {i + 1}/{total_files} files")
-        
-        # Show failed downloads if any
-        if failed_downloads:
-            with st.expander(f"⚠️ Failed downloads ({len(failed_downloads)} files)"):
-                for filename in failed_downloads[:10]:  # Show first 10
-                    st.write(f"• {filename}")
-                if len(failed_downloads) > 10:
-                    st.write(f"... and {len(failed_downloads) - 10} more files")
-        
-        # Clear progress bar
-        progress_bar.empty()
-        
-        st.success(f"✅ Successfully synced {downloaded_count} files to local directory")
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ Error syncing from GitHub: {e}")
-        return False
-
-def load_local_files(local_dir, st):
-    """Load and parse CSV files from local directory with optimized performance"""
-    try:
-        import gzip
-        from io import StringIO
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        import threading
-        
-        # Get all CSV files using the same recursive logic as main function
-        csv_files = []
-        for pattern in ["*.csv", "*.csv.gz"]:
-            csv_files.extend(local_dir.rglob(pattern))
-        
-        if not csv_files:
-            st.warning("⚠️ No local CSV files found")
-            return pd.DataFrame(), 0
-        
-        # Clear any existing UI elements
-        st.empty()
-        
-        # Optimized parsing with batch processing
-        all_data = []
-        new_parsed_count = 0
-        failed_files = []
-        total_files = len(csv_files)
-        
-        # Create progress tracking
-        progress_bar = st.progress(0, text=f"🏰 Parsing files... 0/{total_files}")
-        
-        # Batch processing for better performance
-        batch_size = 50
-        for batch_start in range(0, total_files, batch_size):
-            batch_end = min(batch_start + batch_size, total_files)
-            batch_files = csv_files[batch_start:batch_end]
-            
-            # Process batch with individual file tracking
-            for file_idx, file_path in enumerate(batch_files):
-                try:
-                    # Optimized file reading
-                    if file_path.name.endswith('.gz'):
-                        # Check if file is actually gzipped by examining magic number
-                        with open(file_path, 'rb') as f:
-                            magic_bytes = f.read(2)
-                        
-                        if len(magic_bytes) >= 2 and magic_bytes == b'\x1f\x8b':
-                            # Proper gzip file - decompress it
-                            with gzip.open(file_path, 'rt', encoding='utf-8') as f:
-                                content = f.read()
-                        else:
-                            # Not actually gzipped - read as plain text
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                    else:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                    
-                    # Parse the file
-                    parsed_data = parse_single_file(StringIO(content), file_path.name)
-                    if parsed_data:
-                        all_data.append(parsed_data)
-                        new_parsed_count += 1
-                        
-                except Exception as e:
-                    failed_files.append((file_path.name, str(e)))
-                
-                # Update progress for each file for better user experience
-                current_file_count = batch_start + file_idx + 1
-                progress = min(current_file_count / total_files, 1.0)
-                progress_bar.progress(progress, text=f"🏰 Parsing files... {current_file_count}/{total_files}")
-        
-        # Clear progress bar
-        progress_bar.empty()
-        
-        # Show failed files if any (but don't stop the process)
-        if failed_files and len(failed_files) < 10:  # Only show if few failures
-            with st.expander(f"⚠️ Failed to parse {len(failed_files)} files"):
-                for filename, error in failed_files:
-                    st.write(f"• {filename}: {error}")
-        
-        if not all_data:
-            st.warning("⚠️ No data could be parsed from local files")
-            return pd.DataFrame(), 0
-        
-        # Convert to DataFrame
-        df, _ = convert_data_to_dataframe(all_data)
-        
-        # Store success message for cleanup
-        loaded_msg = st.success(f"✅ Loaded {len(all_data)} files from local directory")
-        
-        # Clear the success message after a delay
-        import time
-        time.sleep(2)
-        loaded_msg.empty()
-        
-        return df, new_parsed_count
-        
-    except Exception as e:
-        st.error(f"❌ Error loading local files: {e}")
-        return pd.DataFrame(), 0
-
-def convert_data_to_dataframe(all_data):
-    """Convert parsed data to DataFrame format"""
-    try:
-        # Create simple data first
-        simple_data = []
-        for data in all_data:
-            if data is None:
-                continue
-            row = {}
-            for key, value in data.items():
-                if key not in ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']:
-                    row[key] = value
-            simple_data.append(row)
-        
-        df = pd.DataFrame(simple_data)
-        
-        # Add complex columns
-        complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']
-        
-        for col in complex_columns:
-            df[col] = None
-            df[col] = df[col].astype('object')
-            
-            col_data = []
-            for data in all_data:
-                if data is not None:
-                    col_data.append(data.get(col, None))
-            df[col] = col_data
-        
-        return df, len(all_data)
-        
-    except Exception as e:
-        st.error(f"❌ Error converting data to DataFrame: {e}")
         return pd.DataFrame(), 0
 
 def select_partial_files(csv_files):
@@ -1896,12 +1148,13 @@ def select_partial_files(csv_files):
     
     return selected_files
 
-
-def download_files_with_progress(files, headers, mode="full"):
-    """Download files with progress bar - match full database style exactly"""
+def download_files_with_progress(files, headers, mode="partial"):
+    """Download files with progress bar"""
     import requests
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import time
+    import gzip
+    from io import StringIO
     
     def format_bytes(bytes_count):
         """Format bytes to human readable format"""
@@ -1945,14 +1198,14 @@ def download_files_with_progress(files, headers, mode="full"):
         except Exception as e:
             return None, file_info['name'], str(e), 0, 0, 0
     
-    # Use st.spinner which automatically disappears when done - match full database style
+    # Use st.spinner which automatically disappears when done
     with st.spinner("🏰 Loading Realm Data..."):
-        # Overall progress bar - match full database style
+        # Overall progress bar
         overall_progress = st.progress(0)
         status_text = st.empty()
         recent_activity = st.empty()
         
-        # Download files in parallel - match full database style
+        # Download files in parallel
         all_data = []
         new_parsed_count = 0
         total_files = len(files)
@@ -1968,12 +1221,12 @@ def download_files_with_progress(files, headers, mode="full"):
                 completed_count += 1
                 total_bytes_downloaded += bytes_downloaded
                 
-                # Update progress - match full database style exactly
+                # Update progress
                 progress = completed_count / total_files
                 overall_progress.progress(progress)
                 status_text.markdown(f"**Progress: {completed_count}/{total_files} files ({progress*100:.1f}%) | Downloaded: {format_bytes(total_bytes_downloaded)}**")
                 
-                # Update recent activity - match full database style
+                # Update recent activity
                 short_name = filename.split('/')[-1]
                 if error:
                     recent_files.insert(0, f"❌ {short_name} - {error}")
@@ -1993,42 +1246,565 @@ def download_files_with_progress(files, headers, mode="full"):
         status_text.empty()
         recent_activity.empty()
         
-        # Combine all data - handle both DataFrame and dict formats
+        # Combine all data
         if all_data:
-            # Check if data is in dictionary format (from parse_comprehensive_csv_from_string)
-            if all_data and isinstance(all_data[0], dict):
-                # Convert dictionaries to DataFrame format like the original loader
-                simple_data = []
-                for data in all_data:
-                    if data is None:
-                        continue
-                    row = {}
-                    for key, value in data.items():
-                        if key not in ['resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']:
-                            row[key] = value
-                    simple_data.append(row)
-                
-                df = pd.DataFrame(simple_data)
-                
-                # Add all complex columns including raw_player_data
-                complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']
-                
-                for col in complex_columns:
-                    df[col] = None
-                    df[col] = df[col].astype('object')
-                    
-                    col_data = []
-                    for data in all_data:
-                        if data is not None:
-                            col_data.append(data.get(col, None))
-                    df[col] = col_data
-                
-                combined_df = df
-            else:
-                # If data is already DataFrame format, concatenate normally
-                combined_df = pd.concat(all_data, ignore_index=True)
+            # Create DataFrame from parsed data
+            simple_data = []
+            for data in all_data:
+                if data is None:
+                    continue
+                row = {}
+                for key, value in data.items():
+                    if key not in ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']:
+                        row[key] = value
+                simple_data.append(row)
             
-            return combined_df, new_parsed_count
+            df = pd.DataFrame(simple_data)
+            
+            # Add complex columns
+            complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']
+            
+            for col in complex_columns:
+                df[col] = None
+                df[col] = df[col].astype('object')
+                
+                col_data = []
+                for data in all_data:
+                    if data is not None:
+                        col_data.append(data.get(col, None))
+                df[col] = col_data
+            
+            return df, new_parsed_count
         else:
             st.warning("⚠️ No data loaded")
             return pd.DataFrame(), 0
+
+def clear_all_messages():
+    """Clear all Streamlit messages to clean up the interface"""
+    import streamlit as st
+    # Clear any existing messages by using st.empty() containers
+    # This creates empty containers that can replace message elements
+    pass
+
+def load_local_database_clean(st):
+    """Load local database with sync functionality"""
+    import os
+    import json
+    from pathlib import Path
+    
+    # Store message containers for cleanup
+    message_containers = []
+    
+    try:
+        # Create local data directory on desktop
+        desktop_path = Path.home() / "Desktop" / "RoADashboard_Data"
+        desktop_path.mkdir(exist_ok=True)
+        
+        # Create subdirectories
+        (desktop_path / "csv_files").mkdir(exist_ok=True)
+        (desktop_path / "cache").mkdir(exist_ok=True)
+        
+        # Check if we need to sync from GitHub
+        sync_needed = st.session_state.get('sync_needed', False)
+        force_sync = st.session_state.get('force_sync', False)
+        
+        # Check if local files exist - search recursively through all subdirectories
+        local_csv_dir = desktop_path / "csv_files"
+        
+        # Search recursively for all CSV and CSV.GZ files in the entire RoADashboard_Data directory
+        local_files = []
+        for pattern in ["*.csv", "*.csv.gz"]:
+            local_files.extend(desktop_path.rglob(pattern))
+        
+        # Filter out files that are not in csv_files subdirectory (to avoid system files)
+        local_files = [f for f in local_files if "csv_files" in str(f)]
+        
+        # Create a set of local file paths for comparison
+        local_file_paths = set()
+        for f in local_files:
+            # Convert to relative path from csv_files directory
+            relative_path = str(f.relative_to(local_csv_dir))
+            local_file_paths.add(relative_path)
+        
+        # Check GitHub for new files if we have local files
+        if local_files and not sync_needed and not force_sync:
+            try:
+                # Get GitHub credentials using the auth module
+                try:
+                    from auth import get_github_credentials
+                    github_token, csv_repo_url = get_github_credentials()
+                except ImportError:
+                    try:
+                        from DailyReportTools.auth import get_github_credentials
+                        github_token, csv_repo_url = get_github_credentials()
+                    except ImportError:
+                        # Fallback - try to load from secrets directly
+                        github_token = st.secrets.get("github_token", "")
+                        csv_repo_url = st.secrets.get("csv_repo_url", "")
+                
+                if github_token and csv_repo_url:
+                    # Extract owner and repo from URL
+                    if "/tree/" in csv_repo_url:
+                        parts = csv_repo_url.split("/tree/")
+                        base_url = parts[0]
+                    else:
+                        base_url = csv_repo_url
+                    
+                    url_parts = base_url.replace("https://github.com/", "").split("/")
+                    owner, repo = url_parts[0], url_parts[1]
+                    
+                    # Get remote files
+                    remote_files = get_remote_file_list(owner, repo, github_token)
+                    remote_file_paths = set(remote_files)
+                    
+                    # Check for new or missing files
+                    missing_files = remote_file_paths - local_file_paths
+                    if missing_files:
+                        msg_container = st.info(f"📥 Found {len(missing_files)} new files on GitHub. Syncing...")
+                        message_containers.append(msg_container)
+                        sync_needed = True
+                    # Note: No message shown when up to date - messages should disappear before dashboard loads
+                else:
+                    msg_container = st.warning("⚠️ GitHub credentials not configured for sync check")
+                    message_containers.append(msg_container)
+            except Exception as e:
+                msg_container = st.warning(f"⚠️ Failed to check for updates: {e}")
+                message_containers.append(msg_container)
+        
+        if not local_files or sync_needed or force_sync:
+            if not local_files:
+                msg_container = st.info("📥 No local files found. Syncing from GitHub...")
+                message_containers.append(msg_container)
+            elif sync_needed:
+                msg_container = st.info("🔄 Sync needed. Updating from GitHub...")
+                message_containers.append(msg_container)
+            else:
+                msg_container = st.info("🔄 Force sync requested. Updating from GitHub...")
+                message_containers.append(msg_container)
+            
+            # Sync files from GitHub
+            if sync_needed:
+                # Get list of missing files to download
+                missing_files = remote_file_paths - local_file_paths
+                success, sync_containers = sync_files_from_github(local_csv_dir, st, missing_files)
+            else:
+                # Full sync for first time or force sync
+                success, sync_containers = sync_files_from_github(local_csv_dir, st)
+            message_containers.extend(sync_containers)
+            if not success:
+                msg_container = st.warning("⚠️ Failed to sync from GitHub. Falling back to full mode.")
+                message_containers.append(msg_container)
+                return load_csv_files_from_github()
+            
+            # Clear sync flags
+            st.session_state.sync_needed = False
+            st.session_state.force_sync = False
+        
+        # Load local files
+        df, count, load_containers = load_local_files(local_csv_dir, st)
+        message_containers.extend(load_containers)
+        
+        # Clear all status messages before returning
+        for container in message_containers:
+            container.empty()
+        
+        return df, count
+        
+    except Exception as e:
+        msg_container = st.error(f"❌ Error in local database mode: {e}")
+        message_containers.append(msg_container)
+        msg_container = st.info("💾 Falling back to full mode...")
+        message_containers.append(msg_container)
+        return load_csv_files_from_github()
+
+def get_remote_file_list(owner, repo, github_token):
+    """Get list of CSV files from GitHub repository"""
+    try:
+        import requests
+        import re
+        
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Streamlit-Dashboard"
+        }
+        
+        # API URL for repository contents
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            return []
+        
+        files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format")
+            return []
+        
+        csv_files = []
+        
+        # Check root directory for CSV files
+        for f in files:
+            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
+                csv_files.append(f['name'])
+            elif f.get('type') == 'dir':
+                # Recursively check subdirectories
+                sub_files = get_csv_files_from_directory(f['name'], owner, repo, github_token, headers)
+                # Extract only the names from the returned dictionaries
+                for sub_file in sub_files:
+                    if isinstance(sub_file, dict):
+                        csv_files.append(sub_file.get('name', ''))
+                    else:
+                        csv_files.append(str(sub_file))
+        
+        return csv_files
+        
+    except Exception as e:
+        return []
+
+def sync_files_from_github(local_dir, st, missing_files=None):
+    """Sync CSV files from GitHub to local directory"""
+    message_containers = []
+    
+    try:
+        import requests
+        import gzip
+        from io import StringIO
+        
+        # Get GitHub credentials using the auth module
+        try:
+            from auth import get_github_credentials
+            github_token, csv_repo_url = get_github_credentials()
+        except ImportError:
+            try:
+                from DailyReportTools.auth import get_github_credentials
+                github_token, csv_repo_url = get_github_credentials()
+            except ImportError:
+                # Fallback - try to load from secrets directly
+                github_token = st.secrets.get("github_token", "")
+                csv_repo_url = st.secrets.get("csv_repo_url", "")
+        
+        if not github_token or not csv_repo_url:
+            msg_container = st.error("❌ GitHub credentials not configured")
+            message_containers.append(msg_container)
+            return False, message_containers
+        
+        # Extract owner and repo from URL
+        if "/tree/" in csv_repo_url:
+            repo_parts = csv_repo_url.split("/tree/")
+            repo_base = repo_parts[0]
+            branch = repo_parts[1] if len(repo_parts) > 1 else "main"
+        else:
+            repo_base = csv_repo_url
+            branch = "main"
+        
+        # Extract owner and repo name
+        url_parts = repo_base.replace("https://github.com/", "").split("/")
+        if len(url_parts) < 2:
+            msg_container = st.error("❌ Invalid repository URL format")
+            message_containers.append(msg_container)
+            return False, message_containers
+        
+        owner, repo = url_parts[0], url_parts[1]
+        
+        # GitHub API headers
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Streamlit-Dashboard"
+        }
+        
+        # Get all CSV files from GitHub
+        csv_files = get_remote_file_info(owner, repo, github_token)
+        
+        if not csv_files:
+            msg_container = st.warning("⚠️ No CSV files found in remote repository")
+            message_containers.append(msg_container)
+            return False, message_containers
+        
+        # Filter files if missing_files is provided (selective sync)
+        if missing_files is not None:
+            missing_files_set = set(missing_files)
+            filtered_files = []
+            for file_info in csv_files:
+                filename = file_info['name']
+                if filename in missing_files_set:
+                    filtered_files.append(file_info)
+            csv_files = filtered_files
+            msg_container = st.info(f"📥 Downloading {len(csv_files)} new files...")
+            message_containers.append(msg_container)
+        
+        # Download files with progress
+        downloaded_count = 0
+        total_files = len(csv_files)
+        
+        # Create progress bar
+        progress_bar = st.progress(0, text=f"📥 Downloading files... 0/{total_files}")
+        message_containers.append(progress_bar)
+        
+        for i, file_info in enumerate(csv_files):
+            filename = file_info['name']
+            download_url = file_info.get('download_url')
+            
+            if not download_url:
+                continue
+            
+            try:
+                # Handle subdirectories
+                if '/' in filename:
+                    subdir = local_dir / '/'.join(filename.split('/')[:-1])
+                    subdir.mkdir(exist_ok=True)
+                    local_path = subdir / filename.split('/')[-1]
+                else:
+                    local_path = local_dir / filename
+                
+                response = requests.get(download_url, headers=headers, timeout=30)
+                
+                if response.status_code == 200:
+                    if filename.endswith('.gz'):
+                        # Check if file is actually gzipped by examining magic number
+                        if len(response.content) >= 2 and response.content[:2] == b'\x1f\x8b':
+                            # Proper gzip file - decompress it
+                            content = gzip.decompress(response.content).decode('utf-8')
+                            with open(local_path, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                        else:
+                            # Not actually gzipped - save as plain text
+                            content = response.text
+                            with open(local_path, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                    else:
+                        with open(local_path, 'w', encoding='utf-8') as f:
+                            f.write(response.text)
+                    
+                    downloaded_count += 1
+                
+                # Update progress
+                progress = (i + 1) / total_files
+                progress_bar.progress(progress, text=f"📥 Downloading files... {i + 1}/{total_files}")
+                
+            except Exception as e:
+                msg_container = st.warning(f"⚠️ Failed to download {filename}: {e}")
+                message_containers.append(msg_container)
+        
+        # Clear progress bar
+        progress_bar.empty()
+        
+        msg_container = st.success(f"✅ Successfully synced {downloaded_count} files to local directory")
+        message_containers.append(msg_container)
+        return True, message_containers
+        
+    except Exception as e:
+        msg_container = st.error(f"❌ Error syncing from GitHub: {e}")
+        message_containers.append(msg_container)
+        return False, message_containers
+
+def get_remote_file_info(owner, repo, github_token):
+    """Get file info dictionaries from GitHub repository for sync process"""
+    try:
+        import requests
+        import re
+        
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "Streamlit-Dashboard"
+        }
+        
+        # API URL for repository contents
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            return []
+        
+        files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format")
+            return []
+        
+        csv_files = []
+        
+        # Check root directory for CSV files
+        for f in files:
+            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
+                csv_files.append(f)
+            elif f.get('type') == 'dir':
+                # Recursively check subdirectories
+                sub_files = get_csv_file_info_from_directory(f['name'], owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
+        
+        return csv_files
+        
+    except Exception as e:
+        return []
+
+def get_csv_file_info_from_directory(dir_path, owner, repo, github_token, headers):
+    """Recursively get CSV file info dictionaries from a GitHub directory"""
+    try:
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{dir_path}"
+        
+        response = requests.get(api_url, headers=headers)
+        
+        if response.status_code != 200:
+            return []
+        
+        files = response.json()
+        
+        # Check if GitHub API returned an error object instead of a list
+        if isinstance(files, dict):
+            print(f"GitHub API error in directory {dir_path}: {files.get('message', 'Unknown error')}")
+            return []
+        
+        if not isinstance(files, list):
+            print(f"Unexpected API response format in directory {dir_path}")
+            return []
+        
+        csv_files = []
+        
+        for f in files:
+            if (f.get('name', '').endswith('.csv') or f.get('name', '').endswith('.csv.gz')) and f.get('type') == 'file':
+                # Store the full path in the name for identification
+                f_with_path = f.copy()
+                dir_path_str = str(dir_path) if dir_path is not None else ''
+                f_with_path['name'] = f"{dir_path_str}/{f['name']}"
+                f_with_path['download_url'] = f.get('download_url', '')
+                csv_files.append(f_with_path)
+            elif f.get('type') == 'dir':
+                # Recursively check subdirectories
+                sub_files = get_csv_file_info_from_directory(f"{dir_path}/{f['name']}", owner, repo, github_token, headers)
+                csv_files.extend(sub_files)
+        
+        return csv_files
+    except Exception as e:
+        print(f"Error getting files from directory {dir_path}: {e}")
+        return []
+
+def load_local_files(local_dir, st):
+    """Load and parse CSV files from local directory"""
+    message_containers = []
+    
+    try:
+        import gzip
+        from io import StringIO
+        
+        # Get all CSV files using the same recursive logic as main function
+        csv_files = []
+        for pattern in ["*.csv", "*.csv.gz"]:
+            csv_files.extend(local_dir.rglob(pattern))
+        
+        if not csv_files:
+            msg_container = st.warning("⚠️ No local CSV files found")
+            message_containers.append(msg_container)
+            return pd.DataFrame(), 0, message_containers
+        
+        # Optimized parsing with progress tracking
+        all_data = []
+        new_parsed_count = 0
+        failed_files = []
+        total_files = len(csv_files)
+        
+        # Create progress tracking
+        progress_bar = st.progress(0, text=f"🏰 Parsing files... 0/{total_files}")
+        message_containers.append(progress_bar)
+        
+        for file_idx, file_path in enumerate(csv_files):
+            try:
+                # Optimized file reading
+                if file_path.name.endswith('.gz'):
+                    # Check if file is actually gzipped by examining magic number
+                    with open(file_path, 'rb') as f:
+                        magic_bytes = f.read(2)
+                    
+                    if len(magic_bytes) >= 2 and magic_bytes == b'\x1f\x8b':
+                        # Proper gzip file - decompress it
+                        with gzip.open(file_path, 'rt', encoding='utf-8') as f:
+                            content = f.read()
+                    else:
+                        # Not actually gzipped - read as plain text
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                else:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                
+                # Parse the file
+                parsed_data = parse_single_file(StringIO(content), file_path.name)
+                if parsed_data:
+                    all_data.append(parsed_data)
+                    new_parsed_count += 1
+                    
+            except Exception as e:
+                failed_files.append((file_path.name, str(e)))
+            
+            # Update progress for each file for better user experience
+            current_file_count = file_idx + 1
+            progress = min(current_file_count / total_files, 1.0)
+            progress_bar.progress(progress, text=f"🏰 Parsing files... {current_file_count}/{total_files}")
+        
+        # Clear progress bar
+        progress_bar.empty()
+        
+        if not all_data:
+            msg_container = st.warning("⚠️ No data could be parsed from local files")
+            message_containers.append(msg_container)
+            return pd.DataFrame(), 0, message_containers
+        
+        # Convert to DataFrame
+        df, _ = convert_data_to_dataframe(all_data)
+        
+        msg_container = st.success(f"✅ Loaded {len(all_data)} files from local directory")
+        message_containers.append(msg_container)
+        return df, new_parsed_count, message_containers
+        
+    except Exception as e:
+        msg_container = st.error(f"❌ Error loading local files: {e}")
+        message_containers.append(msg_container)
+        return pd.DataFrame(), 0, message_containers
+
+def convert_data_to_dataframe(all_data):
+    """Convert parsed data to DataFrame format"""
+    try:
+        # Create simple data first
+        simple_data = []
+        for data in all_data:
+            if data is None:
+                continue
+            row = {}
+            for key, value in data.items():
+                if key not in ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']:
+                    row[key] = value
+            simple_data.append(row)
+        
+        df = pd.DataFrame(simple_data)
+        
+        # Add complex columns
+        complex_columns = ['raw_player_data', 'resources', 'items', 'buildings_data', 'troops_data', 'skins_data', 'quests_data', 'ceasefire_data']
+        
+        for col in complex_columns:
+            df[col] = None
+            df[col] = df[col].astype('object')
+            
+            col_data = []
+            for data in all_data:
+                if data is not None:
+                    col_data.append(data.get(col, None))
+            df[col] = col_data
+        
+        return df, len(all_data)
+        
+    except Exception as e:
+        st.error(f"❌ Error converting data to DataFrame: {e}")
+        return pd.DataFrame(), 0

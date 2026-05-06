@@ -8,35 +8,35 @@ from functools import wraps
 
 # Configuration - Load from Streamlit secrets or local fallback
 def load_secrets():
-    """Load secrets from Streamlit Cloud or local fallback"""
+    """Load secrets from local config first, then fallback to Streamlit Cloud"""
     try:
-        # Try Streamlit Cloud secrets first
-        SECRET_KEY = st.secrets.get("secret_key", "")
-        ADMIN_USERS = dict(st.secrets.get("admin_users", {}))
-        # Also load GitHub credentials
-        GITHUB_TOKEN = st.secrets.get("github_token", "")
-        CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
-        
-        # Validate that we have required secrets
-        if not SECRET_KEY or not ADMIN_USERS:
-            raise ValueError("Missing required authentication secrets")
-            
-        return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "cloud"
-    except:
+        # Try local config file first
+        import os
+        config_path = os.path.join(os.path.dirname(__file__), "local_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            SECRET_KEY = config["SECRET_KEY"]
+            ADMIN_USERS = config["ADMIN_USERS"]
+            GITHUB_TOKEN = config.get("GITHUB_TOKEN", "")
+            CSV_REPO_URL = config.get("CSV_REPO_URL", "")
+            return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "local"
+        else:
+            raise FileNotFoundError("local_config.json not found")
+    except Exception as e:
         try:
-            # Fallback to local config file
-            import os
-            config_path = os.path.join(os.path.dirname(__file__), "local_config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                SECRET_KEY = config["SECRET_KEY"]
-                ADMIN_USERS = config["ADMIN_USERS"]
-                GITHUB_TOKEN = config.get("GITHUB_TOKEN", "")
-                CSV_REPO_URL = config.get("CSV_REPO_URL", "")
-                return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "local"
-            else:
-                raise FileNotFoundError("local_config.json not found")
+            # Fallback to Streamlit Cloud secrets
+            SECRET_KEY = st.secrets.get("secret_key", "")
+            ADMIN_USERS = dict(st.secrets.get("admin_users", {}))
+            # Also load GitHub credentials
+            GITHUB_TOKEN = st.secrets.get("github_token", "")
+            CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
+            
+            # Validate that we have required secrets
+            if not SECRET_KEY or not ADMIN_USERS:
+                raise ValueError("Missing required authentication secrets")
+                
+            return SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, "cloud"
         except Exception as e:
             st.error("❌ Please configure secrets in Streamlit Community Cloud settings or create local_config.json")
             st.info("For local development, create local_config.json with:")
