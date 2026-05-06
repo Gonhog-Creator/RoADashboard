@@ -458,6 +458,14 @@ def load_csv_files_from_github():
                 github_token = st.secrets.get("github_token", "")
                 csv_repo_url = st.secrets.get("csv_repo_url", "")
         
+        # Debug: Show what we found
+        st.write(f"Debug: github_token found: {bool(github_token)}")
+        st.write(f"Debug: csv_repo_url found: {bool(csv_repo_url)}")
+        if github_token:
+            st.write(f"Debug: github_token length: {len(github_token)}")
+        if csv_repo_url:
+            st.write(f"Debug: csv_repo_url: {csv_repo_url}")
+        
         if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured. Please add github_token and csv_repo_url to secrets.")
             return pd.DataFrame(), 0
