@@ -72,14 +72,6 @@ SECRET_KEY, ADMIN_USERS, GITHUB_TOKEN, CSV_REPO_URL, secrets_source = load_secre
 # Make GitHub credentials available for import by other modules
 def get_github_credentials():
     """Get GitHub credentials for use in other modules"""
-    # Debug: Show what we're returning
-    import streamlit as st
-    st.write(f"Auth Debug: GITHUB_TOKEN found: {bool(GITHUB_TOKEN)}")
-    st.write(f"Auth Debug: CSV_REPO_URL found: {bool(CSV_REPO_URL)}")
-    if GITHUB_TOKEN:
-        st.write(f"Auth Debug: GITHUB_TOKEN length: {len(GITHUB_TOKEN)}")
-    if CSV_REPO_URL:
-        st.write(f"Auth Debug: CSV_REPO_URL: {CSV_REPO_URL}")
     return GITHUB_TOKEN, CSV_REPO_URL
 
 def generate_token(username):
