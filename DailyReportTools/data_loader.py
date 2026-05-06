@@ -928,25 +928,38 @@ def load_partial_database_clean(st):
         import re
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
-        # Get GitHub credentials from secure_wrapper
-        try:
-            GITHUB_TOKEN = st.secrets.get("github_token", "")
-            CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
-        except:
-            GITHUB_TOKEN = ""
-            CSV_REPO_URL = ""
+        # Get GitHub credentials using the same approach as version 2.7
+        github_token = None
+        csv_repo_url = None
         
-        if not GITHUB_TOKEN or not CSV_REPO_URL:
+        if hasattr(st, 'secrets'):
+            all_secrets = dict(st.secrets)
+            
+            # Try root level first
+            if "github_token" in all_secrets:
+                github_token = st.secrets["github_token"]
+            if "csv_repo_url" in all_secrets:
+                csv_repo_url = st.secrets["csv_repo_url"]
+            
+            # Try admin_users level
+            if not github_token and "admin_users" in all_secrets:
+                admin_users = dict(st.secrets["admin_users"])
+                if "github_token" in admin_users:
+                    github_token = admin_users["github_token"]
+                if "csv_repo_url" in admin_users:
+                    csv_repo_url = admin_users["csv_repo_url"]
+        
+        if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured")
             return pd.DataFrame(), 0
         
         # Extract owner and repo from URL
-        if "/tree/" in CSV_REPO_URL:
-            parts = CSV_REPO_URL.split("/tree/")
+        if "/tree/" in csv_repo_url:
+            parts = csv_repo_url.split("/tree/")
             base_url = parts[0]
             path = parts[1] if len(parts) > 1 else ""
         else:
-            base_url = CSV_REPO_URL
+            base_url = csv_repo_url
             path = ""
         
         # Parse owner and repo
@@ -956,7 +969,7 @@ def load_partial_database_clean(st):
         
         # GitHub API headers
         headers = {
-            'Authorization': f'token {GITHUB_TOKEN}',
+            'Authorization': f'token {github_token}',
             'Accept': 'application/vnd.github.v3+json'
         }
         
@@ -1260,8 +1273,15 @@ def load_local_database_clean(st):
     from pathlib import Path
     
     try:
-        # Create local data directory on desktop
-        desktop_path = Path.home() / "Desktop" / "RoADashboard_Data"
+        # Create local data directory - use appropriate path for cloud vs local
+        # In cloud environment, use a temporary directory
+        if os.path.exists('/home/appuser'):
+            # Cloud environment - use temp directory
+            desktop_path = Path('/tmp') / 'RoADashboard_Data'
+        else:
+            # Local environment - use Desktop
+            desktop_path = Path.home() / "Desktop" / "RoADashboard_Data"
+        
         desktop_path.mkdir(exist_ok=True)
         
         # Create subdirectories
@@ -1316,25 +1336,38 @@ def sync_files_from_github(local_dir, st):
         import gzip
         from io import StringIO
         
-        # Get GitHub credentials from secure_wrapper
-        try:
-            GITHUB_TOKEN = st.secrets.get("github_token", "")
-            CSV_REPO_URL = st.secrets.get("csv_repo_url", "")
-        except:
-            GITHUB_TOKEN = ""
-            CSV_REPO_URL = ""
+        # Get GitHub credentials using the same approach as version 2.7
+        github_token = None
+        csv_repo_url = None
         
-        if not GITHUB_TOKEN or not CSV_REPO_URL:
+        if hasattr(st, 'secrets'):
+            all_secrets = dict(st.secrets)
+            
+            # Try root level first
+            if "github_token" in all_secrets:
+                github_token = st.secrets["github_token"]
+            if "csv_repo_url" in all_secrets:
+                csv_repo_url = st.secrets["csv_repo_url"]
+            
+            # Try admin_users level
+            if not github_token and "admin_users" in all_secrets:
+                admin_users = dict(st.secrets["admin_users"])
+                if "github_token" in admin_users:
+                    github_token = admin_users["github_token"]
+                if "csv_repo_url" in admin_users:
+                    csv_repo_url = admin_users["csv_repo_url"]
+        
+        if not github_token or not csv_repo_url:
             st.error("❌ GitHub credentials not configured")
             return False
         
         # Extract owner and repo from URL
-        if "/tree/" in CSV_REPO_URL:
-            repo_parts = CSV_REPO_URL.split("/tree/")
+        if "/tree/" in csv_repo_url:
+            repo_parts = csv_repo_url.split("/tree/")
             repo_base = repo_parts[0]
             branch = repo_parts[1] if len(repo_parts) > 1 else "main"
         else:
-            repo_base = CSV_REPO_URL
+            repo_base = csv_repo_url
             branch = "main"
         
         # Extract owner and repo name
@@ -1347,13 +1380,13 @@ def sync_files_from_github(local_dir, st):
         
         # GitHub API headers
         headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
+            "Authorization": f"token {github_token}",
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "Streamlit-Dashboard"
         }
         
         # Get all CSV files from GitHub
-        csv_files = get_remote_file_info(owner, repo, GITHUB_TOKEN)
+        csv_files = get_remote_file_info(owner, repo, github_token)
         
         if not csv_files:
             st.warning("⚠️ No CSV files found in remote repository")
